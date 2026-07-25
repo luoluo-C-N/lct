@@ -41,10 +41,6 @@ impl AssetRepository {
         Self::from_connection(connection)
     }
 
-    pub fn in_memory() -> Result<Self, AssetRepositoryError> {
-        Self::from_connection(Connection::open_in_memory()?)
-    }
-
     pub fn create(&self, asset: &Asset) -> Result<(), AssetRepositoryError> {
         let connection = self
             .connection
@@ -117,7 +113,8 @@ impl AssetRepository {
         Ok(())
     }
 
-    fn from_connection(connection: Connection) -> Result<Self, AssetRepositoryError> {
+    pub(crate) fn from_connection(connection: Connection) -> Result<Self, AssetRepositoryError> {
+        connection.pragma_update(None, "foreign_keys", "ON")?;
         connection.execute_batch(
             "CREATE TABLE IF NOT EXISTS assets (
                 id TEXT PRIMARY KEY NOT NULL,
