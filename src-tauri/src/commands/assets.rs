@@ -1,10 +1,45 @@
-use tauri::State;
+use std::path::PathBuf;
 
-use crate::{domain::asset::Asset, repository::assets::AssetRepository};
+use tauri::{Manager, State};
+
+use crate::{
+    domain::asset::Asset,
+    repository::assets::AssetRepository,
+    services::{
+        capture::{self, CaptureMode},
+        import,
+    },
+};
 
 #[tauri::command]
 pub fn create_asset(asset: Asset, repository: State<'_, AssetRepository>) -> Result<(), String> {
     repository.create(&asset).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn import_files(
+    paths: Vec<PathBuf>,
+    app: tauri::AppHandle,
+    repository: State<'_, AssetRepository>,
+) -> Result<Vec<Asset>, String> {
+    let data_directory = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|error| error.to_string())?;
+    import::import_files(&paths, &data_directory, &repository).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn capture(
+    mode: CaptureMode,
+    app: tauri::AppHandle,
+    repository: State<'_, AssetRepository>,
+) -> Result<Asset, String> {
+    let data_directory = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|error| error.to_string())?;
+    capture::capture(mode, &data_directory, &repository).map_err(|error| error.to_string())
 }
 
 #[tauri::command]

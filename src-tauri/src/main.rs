@@ -3,6 +3,7 @@ use tauri::Manager;
 mod commands;
 mod domain;
 mod repository;
+mod services;
 
 fn main() {
     tauri::Builder::default()
@@ -16,6 +17,8 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::assets::create_asset,
+            commands::assets::import_files,
+            commands::assets::capture,
             commands::assets::list_assets_by_month,
             commands::assets::list_assets_by_day,
             commands::assets::set_asset_tags,
