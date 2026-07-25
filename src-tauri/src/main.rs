@@ -1,5 +1,25 @@
+use tauri::Manager;
+
+mod commands;
+mod domain;
+mod repository;
+
 fn main() {
     tauri::Builder::default()
+        .setup(|app| {
+            let data_directory = app.path().app_local_data_dir()?;
+            std::fs::create_dir_all(&data_directory)?;
+            app.manage(repository::assets::AssetRepository::open(
+                data_directory.join("assets.sqlite3"),
+            )?);
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            commands::assets::create_asset,
+            commands::assets::list_assets_by_month,
+            commands::assets::list_assets_by_day,
+            commands::assets::set_asset_tags,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running Magic Image Library");
 }
