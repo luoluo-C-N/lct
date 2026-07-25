@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { MagicBookView } from './features/library/MagicBookView';
+import { CompanionWindow } from './features/floating-companion/CompanionWindow';
 import './app.css';
 
 export default function App() {
@@ -14,6 +15,7 @@ export default function App() {
         </div>
       </header>
       {view === 'book' ? <MagicBookView initialMonth={{ year: 2026, month: 7 }} /> : <section className="classic-gallery" aria-label="传统图库">图库视图</section>}
+      <CompanionWindow />
     </main>
   );
 }
