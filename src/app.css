@@ -1,0 +1,23 @@
+:root { color: #f9f1f5; background: #141522; font-family: "Microsoft YaHei", sans-serif; }
+body { margin: 0; min-width: 760px; }
+button { font: inherit; }
+.application-shell { min-height: 100vh; background: radial-gradient(circle at 75% 10%, #693b6533, transparent 34%), #141522; }
+.application-header { height: 52px; padding: 0 28px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #ffffff12; }
+.application-header button { border: 0; background: transparent; color: #9e97af; padding: 8px 12px; cursor: pointer; }
+.application-header button.selected { color: #f4cfaa; border-bottom: 2px solid #e9a989; }
+.application-shell > main { min-height: calc(100vh - 53px); display: grid; grid-template-columns: minmax(220px, 26vw) 1fr; gap: 4vw; padding: clamp(24px, 4vh, 56px) clamp(28px, 4vw, 72px); }
+.application-shell aside { position: relative; overflow: hidden; min-height: 560px; }
+.application-shell aside::after { content: ""; position: absolute; right: 18%; top: 16%; width: 48%; height: 67%; border-left: 1px solid #a779b477; border-radius: 54% 0 0 50%; transform: rotate(3deg); pointer-events: none; }
+.application-shell aside ul { list-style: none; padding: 0; margin: 70px 0 0; }
+.application-shell aside li { margin: 26px 0; }
+.application-shell aside button { position: relative; z-index: 1; border: 0; background: transparent; color: #817991; cursor: pointer; }
+.application-shell aside button[aria-current="date"] { color: #ffe0b4; font-size: 20px; font-weight: bold; text-shadow: 0 0 15px #edb77277; }
+.application-shell section[aria-label="图片叠页"] { position: relative; min-height: 520px; overflow: hidden; }
+.application-shell section[aria-label="图片叠页"]::before { content: ""; position: absolute; left: 0; top: 8%; height: 75%; width: 28px; border-radius: 8px 0 0 8px; background: linear-gradient(90deg,#643e50,#c88f87,#623e50); }
+.memory-card { position: absolute; left: calc(8% + var(--offset) * 13%); top: 23%; width: 30%; aspect-ratio: .72; padding: 20px; display: flex; align-items: end; color: #fff4e4; background: linear-gradient(145deg,#7e619b,#e1a7bd,#f4c782); box-shadow: 12px 15px 27px #0008; transition: transform .3s, box-shadow .3s; z-index: calc(10 - var(--offset)); }
+.memory-card:nth-of-type(2) { background: linear-gradient(145deg,#317879,#8ccabc,#e6d17e); }
+.memory-card:nth-of-type(3) { background: linear-gradient(145deg,#6f537c,#bd7b9c,#f2cb98); }
+.memory-card:nth-of-type(4) { background: linear-gradient(145deg,#946756,#daa38d,#a7c8be); }
+.memory-card:hover { transform: translate(-8%,-7%) scale(1.13); box-shadow: 26px 30px 45px #000c; z-index: 20; }
+.image-track { position: absolute; left: 9%; right: 4%; bottom: 7%; width: 87%; accent-color: #f4c88b; }
+.classic-gallery { padding: 48px; }
