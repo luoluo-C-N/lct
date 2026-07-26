@@ -21,7 +21,7 @@
 ```powershell
 git clone C:\path\to\handoff\magic-image-library.bundle C:\path\to\new\magic-image-library
 Set-Location C:\path\to\new\magic-image-library
-git remote add origin https://github.com/luoluo-C-N/lct.git
+git remote set-url origin https://github.com/luoluo-C-N/lct.git
 git fetch origin
 git switch feat/magic-image-library
 ```
