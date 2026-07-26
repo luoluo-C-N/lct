@@ -11,6 +11,7 @@ use crate::{
     },
 };
 
+#[cfg(debug_assertions)]
 #[tauri::command]
 pub fn create_asset(asset: Asset, repository: State<'_, AssetRepository>) -> Result<(), String> {
     repository.create(&asset).map_err(|error| error.to_string())

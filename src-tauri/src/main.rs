@@ -20,6 +20,7 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            #[cfg(debug_assertions)]
             commands::assets::create_asset,
             commands::assets::import_files,
             commands::assets::capture,
