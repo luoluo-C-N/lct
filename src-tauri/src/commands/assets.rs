@@ -6,7 +6,7 @@ use crate::{
     domain::asset::Asset,
     repository::assets::AssetRepository,
     services::{
-        capture::{self, CaptureMode},
+        capture::{self, CaptureMode, CropRegion},
         import,
     },
 };
@@ -32,6 +32,7 @@ pub fn import_files(
 #[tauri::command]
 pub fn capture(
     mode: CaptureMode,
+    region: Option<CropRegion>,
     app: tauri::AppHandle,
     repository: State<'_, AssetRepository>,
 ) -> Result<Asset, String> {
@@ -39,7 +40,7 @@ pub fn capture(
         .path()
         .app_local_data_dir()
         .map_err(|error| error.to_string())?;
-    capture::capture(mode, &data_directory, &repository).map_err(|error| error.to_string())
+    capture::capture(mode, region, &data_directory, &repository).map_err(|error| error.to_string())
 }
 
 #[tauri::command]

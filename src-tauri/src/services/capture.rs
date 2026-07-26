@@ -41,10 +41,12 @@ pub(crate) fn validate_region(
 }
 
 pub fn capture(
-    _mode: CaptureMode,
+    mode: CaptureMode,
+    region: Option<CropRegion>,
     data_directory: &Path,
     repository: &AssetRepository,
 ) -> Result<Asset, CaptureError> {
+    validate_region(mode, region)?;
     let screen = screenshots::Screen::all()
         .map_err(|error| CaptureError::Screenshot(error.to_string()))?
         .into_iter()
