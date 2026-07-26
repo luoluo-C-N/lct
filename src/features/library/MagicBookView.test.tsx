@@ -35,15 +35,15 @@ function deferred<T>() {
 it('replaces date flow and image cards with the selected month response', async () => {
   const loadMonth = vi.fn()
     .mockResolvedValueOnce([asset('july', '2026-07-25T12:00:00Z')])
-    .mockResolvedValueOnce([asset('may', '2026-05-18T12:00:00Z')]);
+    .mockResolvedValueOnce([asset('january', '2026-01-18T12:00:00Z')]);
   render(<MagicBookView initialMonth={{ year: 2026, month: 7 }} loadMonth={loadMonth} />);
 
   await userEvent.click(await screen.findByRole('button', { name: '2026 年 7 月' }));
-  await userEvent.click(screen.getByRole('button', { name: '5 月' }));
+  await userEvent.click(screen.getByRole('button', { name: '1 月' }));
 
-  expect(await screen.findByRole('img', { name: 'may' })).toBeVisible();
+  expect(await screen.findByRole('img', { name: 'january' })).toBeVisible();
   expect(screen.queryByRole('img', { name: 'july' })).not.toBeInTheDocument();
-  expect(screen.getByRole('button', { name: /05 \/ 18/ })).toBeVisible();
+  expect(screen.getByRole('button', { name: /01 \/ 18/ })).toBeVisible();
   expect(screen.queryByRole('button', { name: /07 \/ 25/ })).not.toBeInTheDocument();
 });
 

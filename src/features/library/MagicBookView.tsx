@@ -18,7 +18,7 @@ type MagicBookViewProps = {
   loadDay?: LoadDay;
 };
 
-const availableMonths = [5, 6, 7, 8];
+const availableMonths = Array.from({ length: 12 }, (_, index) => index + 1);
 
 export function MagicBookView({
   initialMonth,
