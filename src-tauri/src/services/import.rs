@@ -81,7 +81,11 @@ pub(crate) fn persist_image(
             album_id: None,
             tags: Vec::new(),
             favorite: false,
+            deleted_at: None,
+            capture_mode: None,
+            annotation_data: None,
             sync_version: 0,
+            cloud_id: None,
         };
         repository.create(&asset)?;
         Ok(asset)

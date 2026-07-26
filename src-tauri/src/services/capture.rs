@@ -9,20 +9,35 @@ use crate::{
     services::import::{persist_image, ImportError},
 };
 
+pub use crate::domain::asset::CaptureMode;
+
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CaptureMode {
-    Region,
-    Window,
-    Fullscreen,
+#[serde(rename_all = "camelCase")]
+pub struct CropRegion {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
 }
 
 #[derive(Debug, Error)]
 pub enum CaptureError {
+    #[error("a crop region is required for region capture")]
+    MissingCropRegion,
     #[error("unable to capture the screen: {0}")]
     Screenshot(String),
     #[error(transparent)]
     Import(#[from] ImportError),
+}
+
+pub(crate) fn validate_region(
+    mode: CaptureMode,
+    region: Option<CropRegion>,
+) -> Result<Option<CropRegion>, CaptureError> {
+    if matches!(mode, CaptureMode::Region) && region.is_none() {
+        return Err(CaptureError::MissingCropRegion);
+    }
+    Ok(region)
 }
 
 pub fn capture(

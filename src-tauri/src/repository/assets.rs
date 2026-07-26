@@ -277,7 +277,11 @@ impl TryFrom<StoredAsset> for Asset {
             album_id: stored.album_id,
             tags: Vec::new(),
             favorite: stored.favorite != 0,
+            deleted_at: None,
+            capture_mode: None,
+            annotation_data: None,
             sync_version: stored.sync_version,
+            cloud_id: None,
         })
     }
 }

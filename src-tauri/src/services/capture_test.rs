@@ -8,8 +8,15 @@ use rusqlite::Connection;
 
 use crate::{
     domain::asset::AssetSource, repository::assets::AssetRepository,
-    services::capture::persist_captured_image,
+    services::capture::{validate_region, CaptureMode},
 };
+
+#[test]
+fn region_capture_requires_a_crop_region() {
+    let error = validate_region(CaptureMode::Region, None).unwrap_err();
+
+    assert_eq!(error.to_string(), "a crop region is required for region capture");
+}
 
 #[test]
 fn capture_persistence_removes_temporary_image_after_creating_asset() {
@@ -22,7 +29,7 @@ fn capture_persistence_removes_temporary_image_after_creating_asset() {
     let repository =
         AssetRepository::from_connection(Connection::open_in_memory().unwrap()).unwrap();
 
-    let asset = persist_captured_image(&source_path, &data_directory, &repository).unwrap();
+    let asset = crate::services::capture::persist_captured_image(&source_path, &data_directory, &repository).unwrap();
 
     assert!(!source_path.exists());
     assert!(asset.original_path.exists());

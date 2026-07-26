@@ -23,7 +23,11 @@ fn serializes_asset_with_the_frontend_ipc_field_contract() {
         album_id: Some("album-1".to_owned()),
         tags: vec!["magic".to_owned()],
         favorite: true,
+        deleted_at: None,
+        capture_mode: None,
+        annotation_data: None,
         sync_version: 7,
+        cloud_id: None,
     };
 
     assert_eq!(
@@ -38,7 +42,11 @@ fn serializes_asset_with_the_frontend_ipc_field_contract() {
             "albumId": "album-1",
             "tags": ["magic"],
             "favorite": true,
+            "deletedAt": null,
+            "captureMode": null,
+            "annotationData": null,
             "syncVersion": 7
+            ,"cloudId": null
         }])
     );
 }

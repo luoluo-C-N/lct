@@ -29,7 +29,11 @@ fn new_asset(created_at: &str) -> Asset {
         album_id: None,
         tags: Vec::new(),
         favorite: false,
+        deleted_at: None,
+        capture_mode: None,
+        annotation_data: None,
         sync_version: 1,
+        cloud_id: None,
     }
 }
 
