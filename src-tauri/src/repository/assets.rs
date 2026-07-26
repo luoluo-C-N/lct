@@ -1,7 +1,7 @@
 use std::{path::Path, sync::Mutex};
 
 use chrono::{DateTime, NaiveDate, Utc};
-use rusqlite::{params, Connection, Row};
+use rusqlite::{params, Connection, OptionalExtension, Row};
 use thiserror::Error;
 
 use crate::domain::asset::{Asset, AssetSource};
@@ -20,6 +20,8 @@ pub enum AssetRepositoryError {
     InvalidSource(String),
     #[error("asset has an invalid {field} timestamp: {value}")]
     InvalidTimestamp { field: &'static str, value: String },
+    #[error("unsupported asset schema version: {0}")]
+    UnsupportedSchemaVersion(String),
 }
 
 #[derive(Debug)]
@@ -115,29 +117,7 @@ impl AssetRepository {
 
     pub(crate) fn from_connection(connection: Connection) -> Result<Self, AssetRepositoryError> {
         connection.pragma_update(None, "foreign_keys", "ON")?;
-        connection.execute_batch(
-            "CREATE TABLE IF NOT EXISTS assets (
-                id TEXT PRIMARY KEY NOT NULL,
-                created_at TEXT NOT NULL,
-                imported_at TEXT NOT NULL,
-                source TEXT NOT NULL,
-                original_path TEXT NOT NULL,
-                preview_path TEXT NOT NULL,
-                album_id TEXT,
-                favorite INTEGER NOT NULL DEFAULT 0,
-                sync_version INTEGER NOT NULL DEFAULT 0
-            );
-            CREATE INDEX IF NOT EXISTS idx_assets_created_at ON assets(created_at);
-            CREATE TABLE IF NOT EXISTS tags (
-                id INTEGER PRIMARY KEY,
-                name TEXT NOT NULL UNIQUE
-            );
-            CREATE TABLE IF NOT EXISTS asset_tags (
-                asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
-                tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
-                PRIMARY KEY (asset_id, tag_id)
-            );",
-        )?;
+        migrate_schema(&connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
         })
@@ -164,11 +144,101 @@ impl AssetRepository {
         )?;
 
         rows.map(|row| {
-            row.map_err(AssetRepositoryError::from)
-                .and_then(Asset::try_from)
-        })
-        .collect()
+            let stored = row.map_err(AssetRepositoryError::from)?;
+            let tags = load_tags(&connection, &stored.id)?;
+            let mut asset = Asset::try_from(stored)?;
+            asset.tags = tags;
+            Ok(asset)
+        }).collect()
     }
+}
+
+fn load_tags(connection: &Connection, asset_id: &str) -> Result<Vec<String>, AssetRepositoryError> {
+    let mut statement = connection.prepare(
+        "SELECT tags.name FROM tags
+         INNER JOIN asset_tags ON asset_tags.tag_id = tags.id
+         WHERE asset_tags.asset_id = ?1
+         ORDER BY tags.name",
+    )?;
+    let tags = statement
+        .query_map(params![asset_id], |row| row.get(0))?
+        .collect::<Result<Vec<String>, _>>()
+        .map_err(AssetRepositoryError::from)?;
+    Ok(tags)
+}
+
+pub(crate) fn migrate_schema(connection: &Connection) -> Result<(), AssetRepositoryError> {
+    let assets_exist = connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'assets')",
+        [],
+        |row| row.get::<_, bool>(0),
+    )?;
+
+    connection.execute_batch(
+        "CREATE TABLE IF NOT EXISTS app_meta (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );",
+    )?;
+
+    let version = connection
+        .query_row(
+            "SELECT value FROM app_meta WHERE key = 'schema_version'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+
+    match version.as_deref() {
+        Some("2") => {}
+        Some("1") | None if assets_exist => {
+            connection.execute_batch(
+                "ALTER TABLE assets ADD COLUMN deleted_at TEXT;
+                 ALTER TABLE assets ADD COLUMN capture_mode TEXT;
+                 ALTER TABLE assets ADD COLUMN annotation_data TEXT;
+                 ALTER TABLE assets ADD COLUMN cloud_id TEXT;",
+            )?;
+        }
+        None => {
+            connection.execute_batch(
+                "CREATE TABLE assets (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    created_at TEXT NOT NULL,
+                    imported_at TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    original_path TEXT NOT NULL,
+                    preview_path TEXT NOT NULL,
+                    album_id TEXT,
+                    favorite INTEGER NOT NULL DEFAULT 0,
+                    deleted_at TEXT,
+                    capture_mode TEXT,
+                    annotation_data TEXT,
+                    sync_version INTEGER NOT NULL DEFAULT 0,
+                    cloud_id TEXT
+                );",
+            )?;
+        }
+        Some(version) => {
+            return Err(AssetRepositoryError::UnsupportedSchemaVersion(version.to_owned()));
+        }
+    }
+
+    connection.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_assets_created_at ON assets(created_at);
+         CREATE INDEX IF NOT EXISTS idx_assets_deleted_at ON assets(deleted_at);
+         CREATE TABLE IF NOT EXISTS tags (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE
+         );
+         CREATE TABLE IF NOT EXISTS asset_tags (
+            asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+            tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+            PRIMARY KEY (asset_id, tag_id)
+         );
+         INSERT INTO app_meta(key, value) VALUES ('schema_version', '2')
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
+    )?;
+    Ok(())
 }
 
 fn date_start(year: i32, month: u32, day: u32) -> Result<DateTime<Utc>, AssetRepositoryError> {
@@ -205,6 +275,7 @@ impl TryFrom<StoredAsset> for Asset {
             original_path: stored.original_path.into(),
             preview_path: stored.preview_path.into(),
             album_id: stored.album_id,
+            tags: Vec::new(),
             favorite: stored.favorite != 0,
             sync_version: stored.sync_version,
         })

@@ -21,6 +21,7 @@ fn serializes_asset_with_the_frontend_ipc_field_contract() {
         original_path: "C:/assets/original.png".into(),
         preview_path: "C:/assets/previews/preview.png".into(),
         album_id: Some("album-1".to_owned()),
+        tags: vec!["magic".to_owned()],
         favorite: true,
         sync_version: 7,
     };
@@ -35,6 +36,7 @@ fn serializes_asset_with_the_frontend_ipc_field_contract() {
             "originalPath": "C:/assets/original.png",
             "previewPath": "C:/assets/previews/preview.png",
             "albumId": "album-1",
+            "tags": ["magic"],
             "favorite": true,
             "syncVersion": 7
         }])

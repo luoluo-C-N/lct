@@ -73,6 +73,7 @@ pub(crate) fn persist_image(
             original_path: original_path.clone(),
             preview_path: preview_path.clone(),
             album_id: None,
+            tags: Vec::new(),
             favorite: false,
             sync_version: 0,
         };

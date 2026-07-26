@@ -13,6 +13,7 @@ pub struct Asset {
     pub original_path: PathBuf,
     pub preview_path: PathBuf,
     pub album_id: Option<String>,
+    pub tags: Vec<String>,
     pub favorite: bool,
     pub sync_version: i64,
 }
