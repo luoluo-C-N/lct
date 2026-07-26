@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { MagicBookView } from './features/library/MagicBookView';
+import { ClassicGallery } from './features/library/ClassicGallery';
 import { CompanionWindow } from './features/floating-companion/CompanionWindow';
 import './app.css';
 
@@ -14,7 +15,9 @@ export default function App() {
           <button className={view === 'gallery' ? 'selected' : ''} onClick={() => setView('gallery')}>图库</button>
         </div>
       </header>
-      {view === 'book' ? <MagicBookView initialMonth={{ year: 2026, month: 7 }} /> : <section className="classic-gallery" aria-label="传统图库">图库视图</section>}
+      {view === 'book'
+        ? <MagicBookView initialMonth={{ year: 2026, month: 7 }} />
+        : <ClassicGallery initialMonth={{ year: 2026, month: 7 }} />}
       <CompanionWindow />
     </main>
   );

@@ -20,7 +20,12 @@ button { font: inherit; }
 .memory-card:nth-of-type(4) { background: linear-gradient(145deg,#946756,#daa38d,#a7c8be); }
 .memory-card:hover { transform: translate(-8%,-7%) scale(1.13); box-shadow: 26px 30px 45px #000c; z-index: 20; }
 .image-track { position: absolute; left: 9%; right: 4%; bottom: 7%; width: 87%; accent-color: #f4c88b; }
-.classic-gallery { padding: 48px; }
+.classic-gallery { min-height: calc(100vh - 149px); padding: 48px clamp(28px, 4vw, 72px); }
+.classic-gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 18px; }
+.classic-gallery-grid img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border: 1px solid #ffffff18; border-radius: 3px; background: #211e2c; box-shadow: 0 12px 28px #0006; }
+.classic-gallery-state { display: grid; justify-items: start; gap: 12px; max-width: 420px; margin: 12vh auto 0; color: #c9bfd0; }
+.classic-gallery-state button { border: 1px solid #e9a98988; border-radius: 3px; padding: 8px 16px; background: #2b2232; color: #f4cfaa; cursor: pointer; }
+.classic-gallery-state button:focus-visible { outline: 2px solid #f4cfaa; outline-offset: 3px; }
 .companion { position: fixed; right: 28px; bottom: 28px; z-index: 30; }
 .companion > button { width: 54px; height: 54px; border: 1px solid #ffcfb1; border-radius: 50%; background: #6d5473; color: #fff3db; box-shadow: 0 10px 26px #0008; cursor: pointer; font-size: 22px; }
 .companion menu { position: absolute; right: 0; bottom: 64px; display: grid; width: 132px; margin: 0; padding: 8px; background: #241d30; border: 1px solid #805c83; }
