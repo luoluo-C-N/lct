@@ -31,6 +31,7 @@ fn import_copies_png_and_creates_import_asset() {
         Some(data_directory.join("assets").join("previews").as_path())
     );
     assert_eq!(assets[0].source, AssetSource::Import);
+    assert!(assets[0].created_at < assets[0].imported_at);
 
     fs::remove_dir_all(temporary_directory).unwrap();
 }

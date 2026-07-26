@@ -5,7 +5,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use image::imageops::FilterType;
 use thiserror::Error;
 
@@ -65,9 +65,15 @@ pub(crate) fn persist_image(
             .save(&preview_path)?;
 
         let now = Utc::now();
+        let file_created_at: DateTime<Utc> = fs::metadata(source_path)
+            .ok()
+            .and_then(|metadata| metadata.created().ok())
+            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+            .map(|duration| DateTime::<Utc>::from(UNIX_EPOCH + duration))
+            .unwrap_or(now);
         let asset = Asset {
             id,
-            created_at: now,
+            created_at: file_created_at,
             imported_at: now,
             source,
             original_path: original_path.clone(),
