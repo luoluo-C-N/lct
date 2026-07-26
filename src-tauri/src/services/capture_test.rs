@@ -8,8 +8,18 @@ use rusqlite::Connection;
 
 use crate::{
     domain::asset::AssetSource, repository::assets::AssetRepository,
-    services::capture::{validate_region, CaptureMode},
+    services::capture::{crop_image, validate_region, CaptureMode, CropRegion},
 };
+
+#[test]
+fn crops_a_screenshot_to_the_requested_region() {
+    let image = image::RgbaImage::from_fn(4, 3, |x, y| image::Rgba([x as u8, y as u8, 0, 255]));
+
+    let cropped = crop_image(image, CropRegion { x: 1, y: 1, width: 2, height: 2 }).unwrap();
+
+    assert_eq!(cropped.dimensions(), (2, 2));
+    assert_eq!(cropped.get_pixel(0, 0), &image::Rgba([1, 1, 0, 255]));
+}
 
 #[test]
 fn region_capture_requires_a_crop_region() {

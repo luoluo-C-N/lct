@@ -24,10 +24,24 @@ pub struct CropRegion {
 pub enum CaptureError {
     #[error("a crop region is required for region capture")]
     MissingCropRegion,
+    #[error("the crop region is outside the captured image")]
+    InvalidCropRegion,
     #[error("unable to capture the screen: {0}")]
     Screenshot(String),
     #[error(transparent)]
     Import(#[from] ImportError),
+}
+
+pub(crate) fn crop_image(
+    image: image::RgbaImage,
+    region: CropRegion,
+) -> Result<image::RgbaImage, CaptureError> {
+    let right = region.x.checked_add(region.width).ok_or(CaptureError::InvalidCropRegion)?;
+    let bottom = region.y.checked_add(region.height).ok_or(CaptureError::InvalidCropRegion)?;
+    if region.width == 0 || region.height == 0 || right > image.width() || bottom > image.height() {
+        return Err(CaptureError::InvalidCropRegion);
+    }
+    Ok(image::imageops::crop_imm(&image, region.x, region.y, region.width, region.height).to_image())
 }
 
 pub(crate) fn validate_region(
