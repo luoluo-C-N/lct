@@ -34,7 +34,11 @@ struct StoredAsset {
     preview_path: String,
     album_id: Option<String>,
     favorite: i64,
+    deleted_at: Option<String>,
+    capture_mode: Option<String>,
+    annotation_data: Option<String>,
     sync_version: i64,
+    cloud_id: Option<String>,
 }
 
 impl AssetRepository {
@@ -50,8 +54,8 @@ impl AssetRepository {
             .expect("asset repository lock poisoned");
         connection.execute(
             "INSERT INTO assets (
-                id, created_at, imported_at, source, original_path, preview_path, album_id, favorite, sync_version
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                id, created_at, imported_at, source, original_path, preview_path, album_id, favorite, deleted_at, capture_mode, annotation_data, sync_version, cloud_id
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 asset.id,
                 asset.created_at.to_rfc3339(),
@@ -61,7 +65,11 @@ impl AssetRepository {
                 asset.preview_path.to_string_lossy(),
                 asset.album_id,
                 i64::from(asset.favorite),
+                asset.deleted_at.as_ref().map(|value| value.to_rfc3339()),
+                asset.capture_mode.map(|value| value.as_str()),
+                asset.annotation_data.as_deref(),
                 asset.sync_version,
+                asset.cloud_id.as_deref(),
             ],
         )?;
         Ok(())
@@ -133,7 +141,7 @@ impl AssetRepository {
             .lock()
             .expect("asset repository lock poisoned");
         let mut statement = connection.prepare(
-            "SELECT id, created_at, imported_at, source, original_path, preview_path, album_id, favorite, sync_version
+            "SELECT id, created_at, imported_at, source, original_path, preview_path, album_id, favorite, deleted_at, capture_mode, annotation_data, sync_version, cloud_id
              FROM assets
              WHERE created_at >= ?1 AND created_at < ?2
              ORDER BY created_at DESC",
@@ -258,7 +266,11 @@ fn stored_asset_from_row(row: &Row<'_>) -> rusqlite::Result<StoredAsset> {
         preview_path: row.get(5)?,
         album_id: row.get(6)?,
         favorite: row.get(7)?,
-        sync_version: row.get(8)?,
+        deleted_at: row.get(8)?,
+        capture_mode: row.get(9)?,
+        annotation_data: row.get(10)?,
+        sync_version: row.get(11)?,
+        cloud_id: row.get(12)?,
     })
 }
 
@@ -277,11 +289,11 @@ impl TryFrom<StoredAsset> for Asset {
             album_id: stored.album_id,
             tags: Vec::new(),
             favorite: stored.favorite != 0,
-            deleted_at: None,
-            capture_mode: None,
-            annotation_data: None,
+            deleted_at: stored.deleted_at.map(|value| parse_timestamp("deleted_at", value)).transpose()?,
+            capture_mode: stored.capture_mode.as_deref().map(crate::domain::asset::CaptureMode::parse).flatten(),
+            annotation_data: stored.annotation_data,
             sync_version: stored.sync_version,
-            cloud_id: None,
+            cloud_id: stored.cloud_id,
         })
     }
 }

@@ -29,11 +29,11 @@ fn new_asset(created_at: &str) -> Asset {
         album_id: None,
         tags: Vec::new(),
         favorite: false,
-        deleted_at: None,
-        capture_mode: None,
-        annotation_data: None,
+        deleted_at: Some(DateTime::parse_from_rfc3339("2026-07-26T00:00:00Z").unwrap().with_timezone(&Utc)),
+        capture_mode: Some(crate::domain::asset::CaptureMode::Fullscreen),
+        annotation_data: Some("{\"shapes\":[]}".to_owned()),
         sync_version: 1,
-        cloud_id: None,
+        cloud_id: Some("cloud-1".to_owned()),
     }
 }
 
@@ -43,7 +43,10 @@ fn lists_only_assets_from_requested_month() {
     repo.create(&new_asset("2026-07-25T12:00:00Z")).unwrap();
     repo.create(&new_asset("2026-08-01T12:00:00Z")).unwrap();
 
-    assert_eq!(repo.list_by_month(2026, 7).unwrap().len(), 1);
+    let assets = repo.list_by_month(2026, 7).unwrap();
+    assert_eq!(assets.len(), 1);
+    assert_eq!(assets[0].capture_mode, Some(crate::domain::asset::CaptureMode::Fullscreen));
+    assert_eq!(assets[0].cloud_id.as_deref(), Some("cloud-1"));
 }
 
 #[test]
