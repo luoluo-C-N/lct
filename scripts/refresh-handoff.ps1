@@ -49,7 +49,7 @@ $manifestTemporaryPath = Join-Path $resolvedOutput '.manifest.json.tmp'
 
 Remove-Item -LiteralPath $bundleTemporaryPath, $manifestTemporaryPath -Force -ErrorAction SilentlyContinue
 try {
-    Invoke-Git @('bundle', 'create', $bundleTemporaryPath, '--all') | Out-Null
+    Invoke-Git @('bundle', 'create', $bundleTemporaryPath, '--branches', '--tags') | Out-Null
     Invoke-Git @('bundle', 'verify', $bundleTemporaryPath) | Out-Null
 
     [pscustomobject]@{

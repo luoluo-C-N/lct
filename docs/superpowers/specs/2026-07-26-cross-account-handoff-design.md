@@ -11,7 +11,7 @@
 - `docs/CONTINUATION.md`：面向下一位开发代理的当前状态、分支、验证命令、接力步骤和已知事项。
 - `scripts/refresh-handoff.ps1`：从当前 Git 仓库生成接力 bundle，并写入本地元数据。
 
-本地 `handoff/` 目录被 Git 忽略，其中包含 `magic-image-library.bundle` 与 `manifest.json`。bundle 使用 `git bundle create --all`，保留所有本地 refs 与完整历史，但不包含 `node_modules`、构建产物、凭据或未追踪文件。
+本地 `handoff/` 目录被 Git 忽略，其中包含 `magic-image-library.bundle` 与 `manifest.json`。bundle 打包项目本地分支和标签及其完整可达历史，但排除 Codex 内部 checkpoint refs；它不包含 `node_modules`、构建产物、凭据或未追踪文件。
 
 ## 使用流程
 

@@ -15,6 +15,7 @@ try {
     Copy-Item -LiteralPath $sourceScript -Destination (Join-Path $repoPath 'refresh-handoff.ps1')
     git -C $repoPath add README.md refresh-handoff.ps1
     git -C $repoPath commit --quiet -m 'fixture'
+    git -C $repoPath update-ref refs/codex/fixture HEAD
 
     & (Join-Path $repoPath 'refresh-handoff.ps1') -OutputDirectory $outputPath
     if ($LASTEXITCODE -ne 0) { throw 'The handoff refresh script failed for a clean repository.' }
@@ -25,6 +26,8 @@ try {
     if (-not (Test-Path -LiteralPath $manifestPath)) { throw 'The handoff manifest was not created.' }
     git -C $repoPath bundle verify $bundlePath 2>$null | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'The generated bundle did not verify.' }
+    $bundleRefs = & git -C $repoPath bundle list-heads $bundlePath
+    if ($bundleRefs -match 'refs/codex/') { throw 'The handoff bundle includes internal Codex refs.' }
 
     $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
     if ($manifest.branch -ne 'master') { throw "Expected master branch, got $($manifest.branch)." }
