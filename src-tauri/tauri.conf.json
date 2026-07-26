@@ -10,6 +10,14 @@
     "frontendDist": "../dist"
   },
   "app": {
+    "security": {
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "$APPLOCALDATA/assets/previews/**/*"
+        ]
+      }
+    },
     "windows": [
       {
         "title": "魔法影像库",

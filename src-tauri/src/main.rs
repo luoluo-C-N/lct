@@ -5,6 +5,10 @@ mod domain;
 mod repository;
 mod services;
 
+#[cfg(test)]
+#[path = "asset_protocol_config_test.rs"]
+mod asset_protocol_config_test;
+
 fn main() {
     tauri::Builder::default()
         .setup(|app| {

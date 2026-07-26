@@ -25,6 +25,11 @@ fn import_copies_png_and_creates_import_asset() {
 
     assert_eq!(assets.len(), 1);
     assert!(assets[0].original_path.exists());
+    assert!(assets[0].preview_path.exists());
+    assert_eq!(
+        assets[0].preview_path.parent(),
+        Some(data_directory.join("assets").join("previews").as_path())
+    );
     assert_eq!(assets[0].source, AssetSource::Import);
 
     fs::remove_dir_all(temporary_directory).unwrap();
