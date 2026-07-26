@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - 仅支持 Windows 10/11；窗口截图只截取前台窗口。
-- v1 到 v2 迁移使用 `app_meta.schema_version` 与六条 `ALTER TABLE`，不重建 assets 表。
+- v1 到 v2 迁移使用 `app_meta.schema_version` 与四条 `ALTER TABLE`，不重建 assets 表。
 - `asset-created` 只触发当前显示月份的重载。
 - 正式构建不得注册 `create_asset` IPC 命令。
 

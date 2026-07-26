@@ -6,7 +6,7 @@
 
 ## 数据与迁移
 
-`Asset` 增加 `tags`、`deleted_at`、`capture_mode`、`annotation_data` 与 `cloud_id`。SQLite 保留现有 `tags` 与 `asset_tags` 关系表，并在 `assets` 增加兼容 v2 的 JSON `tags` 列，两个表示在本批次由 repository 同步维护。启动时独立的迁移函数读取 `app_meta.schema_version`：新库创建 v2 schema 并记录版本 2；旧库从 v1 按固定顺序执行六条幂等的 `ALTER TABLE ... ADD COLUMN`，再记录版本 2。迁移函数接受 `Connection`，使其能用内存数据库单测。
+`Asset` 增加 `tags`、`deleted_at`、`capture_mode`、`annotation_data` 与 `cloud_id`。标签只由现有 `tags` 和 `asset_tags` 关系表持久化；repository 查询通过关联查询填充 `Asset.tags`，写入只更新关系表。启动时独立的迁移函数读取 `app_meta.schema_version`：新库创建 v2 schema 并记录版本 2；旧库从 v1 按固定顺序执行四条幂等的 `ALTER TABLE ... ADD COLUMN`（`deleted_at`、`capture_mode`、`annotation_data`、`cloud_id`），再记录版本 2。迁移函数接受 `Connection`，使其能用内存数据库单测。
 
 ## 截图与命令
 
