@@ -6,7 +6,7 @@ use thiserror::Error;
 use crate::{
     domain::asset::{Asset, AssetSource},
     repository::assets::AssetRepository,
-    services::import::{persist_image, ImportError},
+    services::import::{new_asset_id, persist_image, ImportError},
 };
 
 pub use crate::domain::asset::CaptureMode;
@@ -72,10 +72,7 @@ pub fn capture(
 
     let captures_directory = data_directory.join("assets").join("captures");
     fs::create_dir_all(&captures_directory)?;
-    let source_path = captures_directory.join(format!(
-        "capture-{}.png",
-        chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
-    ));
+    let source_path = captures_directory.join(format!("capture-{}.png", new_asset_id()));
     screenshot
         .save(&source_path)
         .map_err(|error| CaptureError::Screenshot(error.to_string()))?;

@@ -98,7 +98,7 @@ pub(crate) fn persist_image(
     result
 }
 
-fn new_asset_id() -> String {
+pub(crate) fn new_asset_id() -> String {
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system time is before the Unix epoch")
