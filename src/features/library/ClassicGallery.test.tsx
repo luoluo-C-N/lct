@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 import { invoke } from '@tauri-apps/api/core';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from '../../App';
 import type { Asset } from '../../lib/assets';
@@ -10,6 +10,10 @@ vi.mock('@tauri-apps/api/core', () => ({
   convertFileSrc: (path: string) => `asset://localhost/${path}`,
   invoke: vi.fn(),
 }));
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 function asset(id: string, createdAt: string): Asset {
   return {
@@ -81,4 +85,27 @@ it('renders queried assets after switching the application to gallery mode', asy
   await userEvent.click(screen.getByRole('button', { name: '图库' }));
 
   expect(await screen.findByRole('img', { name: 'gallery-memory' })).toBeVisible();
+});
+
+it('initializes both application views with the current local month', async () => {
+  vi.mocked(invoke).mockResolvedValue([]);
+  render(<App now={() => new Date(2031, 1, 14, 12)} />);
+
+  await waitFor(() => {
+    expect(invoke).toHaveBeenNthCalledWith(
+      1,
+      'list_assets_by_month',
+      { year: 2031, month: 2 },
+    );
+  });
+
+  await userEvent.click(screen.getByRole('button', { name: '图库' }));
+
+  await waitFor(() => {
+    expect(invoke).toHaveBeenNthCalledWith(
+      2,
+      'list_assets_by_month',
+      { year: 2031, month: 2 },
+    );
+  });
 });

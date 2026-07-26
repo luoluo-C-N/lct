@@ -4,8 +4,17 @@ import { ClassicGallery } from './features/library/ClassicGallery';
 import { CompanionWindow } from './features/floating-companion/CompanionWindow';
 import './app.css';
 
-export default function App() {
+type AppProps = {
+  now?: () => Date;
+};
+
+export default function App({ now = () => new Date() }: AppProps) {
   const [view, setView] = useState<'book' | 'gallery'>('book');
+  const [initialMonth] = useState(() => {
+    const date = now();
+    return { year: date.getFullYear(), month: date.getMonth() + 1 };
+  });
+
   return (
     <main aria-label="影像资料库" className="application-shell">
       <header className="application-header">
@@ -16,8 +25,8 @@ export default function App() {
         </div>
       </header>
       {view === 'book'
-        ? <MagicBookView initialMonth={{ year: 2026, month: 7 }} />
-        : <ClassicGallery initialMonth={{ year: 2026, month: 7 }} />}
+        ? <MagicBookView initialMonth={initialMonth} />
+        : <ClassicGallery initialMonth={initialMonth} />}
       <CompanionWindow />
     </main>
   );
