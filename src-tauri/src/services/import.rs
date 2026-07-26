@@ -10,7 +10,7 @@ use image::imageops::FilterType;
 use thiserror::Error;
 
 use crate::{
-    domain::asset::{Asset, AssetSource},
+    domain::asset::{Asset, AssetSource, CaptureMode},
     repository::assets::{AssetRepository, AssetRepositoryError},
 };
 
@@ -33,7 +33,7 @@ pub fn import_files(
 ) -> Result<Vec<Asset>, ImportError> {
     paths
         .iter()
-        .map(|path| persist_image(path, data_directory, repository, AssetSource::Import))
+        .map(|path| persist_image(path, data_directory, repository, AssetSource::Import, None))
         .collect()
 }
 
@@ -42,6 +42,7 @@ pub(crate) fn persist_image(
     data_directory: &Path,
     repository: &AssetRepository,
     source: AssetSource,
+    capture_mode: Option<CaptureMode>,
 ) -> Result<Asset, ImportError> {
     let id = new_asset_id();
     let originals_directory = data_directory.join("assets").join("originals");
@@ -82,7 +83,7 @@ pub(crate) fn persist_image(
             tags: Vec::new(),
             favorite: false,
             deleted_at: None,
-            capture_mode: None,
+            capture_mode,
             annotation_data: None,
             sync_version: 0,
             cloud_id: None,

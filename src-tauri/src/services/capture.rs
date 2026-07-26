@@ -60,7 +60,7 @@ pub fn capture(
     data_directory: &Path,
     repository: &AssetRepository,
 ) -> Result<Asset, CaptureError> {
-    validate_region(mode, region)?;
+    let region = validate_region(mode, region)?;
     let screen = screenshots::Screen::all()
         .map_err(|error| CaptureError::Screenshot(error.to_string()))?
         .into_iter()
@@ -76,12 +76,24 @@ pub fn capture(
     screenshot
         .save(&source_path)
         .map_err(|error| CaptureError::Screenshot(error.to_string()))?;
+    if let Some(region) = region {
+        let cropped = crop_image(
+            image::open(&source_path)
+                .map_err(|error| CaptureError::Screenshot(error.to_string()))?
+                .to_rgba8(),
+            region,
+        )?;
+        cropped
+            .save(&source_path)
+            .map_err(|error| CaptureError::Screenshot(error.to_string()))?;
+    }
 
-    persist_captured_image(&source_path, data_directory, repository)
+    persist_captured_image(&source_path, mode, data_directory, repository)
 }
 
 pub(crate) fn persist_captured_image(
     source_path: &Path,
+    mode: CaptureMode,
     data_directory: &Path,
     repository: &AssetRepository,
 ) -> Result<Asset, CaptureError> {
@@ -90,6 +102,7 @@ pub(crate) fn persist_captured_image(
         data_directory,
         repository,
         AssetSource::Capture,
+        Some(mode),
     )
     .map_err(Into::into);
     let _ = fs::remove_file(source_path);

@@ -39,11 +39,17 @@ fn capture_persistence_removes_temporary_image_after_creating_asset() {
     let repository =
         AssetRepository::from_connection(Connection::open_in_memory().unwrap()).unwrap();
 
-    let asset = crate::services::capture::persist_captured_image(&source_path, &data_directory, &repository).unwrap();
+    let asset = crate::services::capture::persist_captured_image(
+        &source_path,
+        CaptureMode::Region,
+        &data_directory,
+        &repository,
+    ).unwrap();
 
     assert!(!source_path.exists());
     assert!(asset.original_path.exists());
     assert_eq!(asset.source, AssetSource::Capture);
+    assert_eq!(asset.capture_mode, Some(CaptureMode::Region));
 
     fs::remove_dir_all(temporary_directory).unwrap();
 }
