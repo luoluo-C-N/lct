@@ -6,7 +6,10 @@ use std::{
 };
 
 use chrono::Utc;
-use image::{imageops::FilterType, DynamicImage, GenericImageView, ImageError, Rgba};
+use image::{
+    imageops::FilterType, DynamicImage, GenericImageView, ImageError, ImageFormat, ImageReader,
+    Limits, Rgba,
+};
 use thiserror::Error;
 
 use crate::{
@@ -19,6 +22,7 @@ const MIN_DIMENSION: u32 = 128;
 const MAX_DIMENSION: u32 = 4096;
 const MAX_TEXTURE_DIMENSION: u32 = 1024;
 const MAX_PREVIEW_DIMENSION: u32 = 256;
+const MAX_DECODE_ALLOCATION: u64 = 32 * 1024 * 1024;
 const MIN_VISIBLE_ALPHA: f32 = 0.2;
 const FALLBACK_COLOR: &str = "#666666";
 static IMPORT_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -42,6 +46,8 @@ pub enum SkinImportError {
         minimum: u32,
         maximum: u32,
     },
+    #[error("skin import failed ({operation}) and compensation failed: {cleanup}")]
+    Compensation { operation: String, cleanup: String },
 }
 
 pub fn import_image_skin(
@@ -51,27 +57,24 @@ pub fn import_image_skin(
     repository: &CompanionRepository,
 ) -> Result<CompanionSkin, SkinImportError> {
     validate_source_size(path, MAX_IMAGE_BYTES)?;
-    validate_source_format(path)?;
-    let decoded = image::open(path)?;
+    let decoded = decode_source(path)?;
     validate_dimensions(decoded.dimensions())?;
 
     let square = center_crop_square(decoded);
     let colors = derive_flow_colors(&square);
-    persist_normalized_skin(square, colors, path, name, data_dir, repository)
+    fs::create_dir_all(data_dir.join("skins"))?;
+    let mut storage = FilesystemSkinImportStorage { repository };
+    persist_normalized_skin_with_storage(square, colors, path, name, data_dir, &mut storage)
 }
 
 pub fn derive_flow_colors(image: &DynamicImage) -> [String; 2] {
-    let sampled = image.resize_exact(16, 16, FilterType::Triangle).to_rgba8();
-    let (red, green, blue, count) = sampled.pixels().fold(
+    let (red, green, blue, count) = alpha_aware_linear_samples(image).into_iter().fold(
         (0.0_f32, 0.0_f32, 0.0_f32, 0_u32),
-        |(red, green, blue, count), pixel| {
-            if pixel[3] as f32 / 255.0 < MIN_VISIBLE_ALPHA {
-                return (red, green, blue, count);
-            }
+        |(red, green, blue, count), sample| {
             (
-                red + srgb_to_linear(pixel[0]),
-                green + srgb_to_linear(pixel[1]),
-                blue + srgb_to_linear(pixel[2]),
+                red + sample[0],
+                green + sample[1],
+                blue + sample[2],
                 count + 1,
             )
         },
@@ -106,17 +109,22 @@ fn validate_source_size(path: &Path, maximum: u64) -> Result<(), SkinImportError
     Ok(())
 }
 
-fn validate_source_format(path: &Path) -> Result<(), SkinImportError> {
-    match path.extension().and_then(|extension| extension.to_str()) {
-        Some(extension)
-            if extension.eq_ignore_ascii_case("png") || extension.eq_ignore_ascii_case("webp") =>
-        {
-            Ok(())
+fn decode_source(path: &Path) -> Result<DynamicImage, SkinImportError> {
+    let mut reader = ImageReader::open(path)?.with_guessed_format()?;
+    match reader.format() {
+        Some(ImageFormat::Png | ImageFormat::WebP) => {}
+        _ => {
+            return Err(SkinImportError::UnsupportedFormat(
+                path.display().to_string(),
+            ))
         }
-        _ => Err(SkinImportError::UnsupportedFormat(
-            path.display().to_string(),
-        )),
     }
+    let mut limits = Limits::default();
+    limits.max_image_width = Some(MAX_DIMENSION);
+    limits.max_image_height = Some(MAX_DIMENSION);
+    limits.max_alloc = Some(MAX_DECODE_ALLOCATION);
+    reader.limits(limits);
+    Ok(reader.decode()?)
 }
 
 fn validate_dimensions((width, height): (u32, u32)) -> Result<(), SkinImportError> {
@@ -141,20 +149,19 @@ fn center_crop_square(image: DynamicImage) -> DynamicImage {
     image.crop_imm((width - side) / 2, (height - side) / 2, side, side)
 }
 
-fn persist_normalized_skin(
+fn persist_normalized_skin_with_storage(
     square: DynamicImage,
     colors: [String; 2],
     source_path: &Path,
     name: Option<&str>,
     data_dir: &Path,
-    repository: &CompanionRepository,
+    storage: &mut impl SkinImportStorage,
 ) -> Result<CompanionSkin, SkinImportError> {
     let skin_id = next_skin_id();
     let skin_directory = data_dir.join("skins");
     let final_directory = skin_directory.join(&skin_id);
     let temporary_directory = skin_directory.join(format!(".{skin_id}.tmp"));
-    fs::create_dir_all(&skin_directory)?;
-    fs::create_dir(&temporary_directory)?;
+    storage.create_directory(&temporary_directory)?;
 
     let texture_path = temporary_directory.join("texture.png");
     let preview_path = temporary_directory.join("preview.png");
@@ -169,12 +176,17 @@ fn persist_normalized_skin(
         FilterType::Lanczos3,
     );
 
-    if let Err(error) = texture
-        .save(&texture_path)
-        .and_then(|_| preview.save(&preview_path))
+    if let Err(error) = storage
+        .save_png(&texture, &texture_path)
+        .and_then(|_| storage.save_png(&preview, &preview_path))
     {
-        let _ = fs::remove_dir_all(&temporary_directory);
-        return Err(error.into());
+        return return_after_compensation(
+            storage,
+            None,
+            &temporary_directory,
+            &final_directory,
+            error,
+        );
     }
 
     let skin = CompanionSkin {
@@ -193,18 +205,166 @@ fn persist_normalized_skin(
         created_at: Utc::now(),
     };
 
-    if let Err(error) = repository.create_skin(&skin) {
-        let _ = fs::remove_dir_all(&temporary_directory);
-        return Err(error.into());
+    if let Err(error) = storage.create_skin(&skin) {
+        return return_after_compensation(
+            storage,
+            None,
+            &temporary_directory,
+            &final_directory,
+            error,
+        );
     }
 
-    if let Err(error) = fs::rename(&temporary_directory, &final_directory) {
-        let _ = repository.delete_skin(&skin.id);
-        let _ = fs::remove_dir_all(&temporary_directory);
-        return Err(error.into());
+    if let Err(error) = storage.rename_directory(&temporary_directory, &final_directory) {
+        return return_after_compensation(
+            storage,
+            Some(&skin.id),
+            &temporary_directory,
+            &final_directory,
+            error,
+        );
     }
 
     Ok(skin)
+}
+
+#[cfg(test)]
+pub(crate) fn persist_normalized_skin_with_storage_for_test(
+    square: DynamicImage,
+    source_path: &Path,
+    data_dir: &Path,
+    storage: &mut impl SkinImportStorage,
+) -> Result<CompanionSkin, SkinImportError> {
+    let colors = derive_flow_colors(&square);
+    persist_normalized_skin_with_storage(square, colors, source_path, None, data_dir, storage)
+}
+
+pub(crate) trait SkinImportStorage {
+    fn create_directory(&mut self, path: &Path) -> Result<(), SkinImportError>;
+    fn save_png(&mut self, image: &DynamicImage, path: &Path) -> Result<(), SkinImportError>;
+    fn create_skin(&mut self, skin: &CompanionSkin) -> Result<(), SkinImportError>;
+    fn rollback_skin(&mut self, skin_id: &str) -> Result<(), SkinImportError>;
+    fn rename_directory(
+        &mut self,
+        temporary_directory: &Path,
+        final_directory: &Path,
+    ) -> Result<(), SkinImportError>;
+    fn remove_directory(&mut self, path: &Path) -> Result<(), SkinImportError>;
+}
+
+struct FilesystemSkinImportStorage<'a> {
+    repository: &'a CompanionRepository,
+}
+
+impl SkinImportStorage for FilesystemSkinImportStorage<'_> {
+    fn create_directory(&mut self, path: &Path) -> Result<(), SkinImportError> {
+        fs::create_dir(path)?;
+        Ok(())
+    }
+
+    fn save_png(&mut self, image: &DynamicImage, path: &Path) -> Result<(), SkinImportError> {
+        image.save(path)?;
+        Ok(())
+    }
+
+    fn create_skin(&mut self, skin: &CompanionSkin) -> Result<(), SkinImportError> {
+        self.repository.create_skin(skin)?;
+        Ok(())
+    }
+
+    fn rollback_skin(&mut self, skin_id: &str) -> Result<(), SkinImportError> {
+        self.repository.rollback_imported_skin(skin_id)?;
+        Ok(())
+    }
+
+    fn rename_directory(
+        &mut self,
+        temporary_directory: &Path,
+        final_directory: &Path,
+    ) -> Result<(), SkinImportError> {
+        fs::rename(temporary_directory, final_directory)?;
+        Ok(())
+    }
+
+    fn remove_directory(&mut self, path: &Path) -> Result<(), SkinImportError> {
+        if path.exists() {
+            fs::remove_dir_all(path)?;
+        }
+        Ok(())
+    }
+}
+
+fn return_after_compensation(
+    storage: &mut impl SkinImportStorage,
+    skin_id: Option<&str>,
+    temporary_directory: &Path,
+    final_directory: &Path,
+    operation_error: SkinImportError,
+) -> Result<CompanionSkin, SkinImportError> {
+    match compensate_import(storage, skin_id, temporary_directory, final_directory) {
+        Ok(()) => Err(operation_error),
+        Err(cleanup) => Err(SkinImportError::Compensation {
+            operation: operation_error.to_string(),
+            cleanup: cleanup.to_string(),
+        }),
+    }
+}
+
+fn compensate_import(
+    storage: &mut impl SkinImportStorage,
+    skin_id: Option<&str>,
+    temporary_directory: &Path,
+    final_directory: &Path,
+) -> Result<(), SkinImportError> {
+    let rollback_result = skin_id
+        .map(|id| rollback_with_retry(storage, id))
+        .transpose();
+    let temporary_result = storage.remove_directory(temporary_directory);
+    let final_result = storage.remove_directory(final_directory);
+    rollback_result.and(temporary_result).and(final_result)
+}
+
+fn rollback_with_retry(
+    storage: &mut impl SkinImportStorage,
+    skin_id: &str,
+) -> Result<(), SkinImportError> {
+    match storage.rollback_skin(skin_id) {
+        Ok(()) => Ok(()),
+        Err(_) => storage.rollback_skin(skin_id),
+    }
+}
+
+fn alpha_aware_linear_samples(image: &DynamicImage) -> Vec<[f32; 3]> {
+    const PALETTE_SIZE: u32 = 16;
+    let pixels = image.to_rgba8();
+    let (width, height) = pixels.dimensions();
+    let mut buckets = vec![[0.0_f32; 5]; (PALETTE_SIZE * PALETTE_SIZE) as usize];
+
+    for (x, y, pixel) in pixels.enumerate_pixels() {
+        let bucket_x = x * PALETTE_SIZE / width;
+        let bucket_y = y * PALETTE_SIZE / height;
+        let bucket = &mut buckets[(bucket_y * PALETTE_SIZE + bucket_x) as usize];
+        let alpha = pixel[3] as f32 / 255.0;
+        bucket[0] += srgb_to_linear(pixel[0]) * alpha;
+        bucket[1] += srgb_to_linear(pixel[1]) * alpha;
+        bucket[2] += srgb_to_linear(pixel[2]) * alpha;
+        bucket[3] += alpha;
+        bucket[4] += 1.0;
+    }
+
+    buckets
+        .into_iter()
+        .filter_map(|bucket| {
+            let alpha = bucket[3] / bucket[4];
+            (alpha >= MIN_VISIBLE_ALPHA && bucket[3] > 0.0).then(|| {
+                [
+                    bucket[0] / bucket[3],
+                    bucket[1] / bucket[3],
+                    bucket[2] / bucket[3],
+                ]
+            })
+        })
+        .collect()
 }
 
 fn default_skin_name(source_path: &Path) -> String {

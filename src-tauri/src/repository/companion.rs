@@ -194,6 +194,29 @@ impl CompanionRepository {
         Ok(())
     }
 
+    pub(crate) fn rollback_imported_skin(
+        &self,
+        skin_id: &str,
+    ) -> Result<(), CompanionRepositoryError> {
+        let mut connection = self
+            .connection
+            .lock()
+            .expect("companion repository lock poisoned");
+        let transaction = connection.transaction()?;
+        transaction.execute(
+            "UPDATE companion_settings
+             SET active_skin_id = 'quiet-aurora'
+             WHERE singleton = 1 AND active_skin_id = ?1",
+            params![skin_id],
+        )?;
+        transaction.execute(
+            "DELETE FROM companion_skins WHERE id = ?1 AND source = 'imported'",
+            params![skin_id],
+        )?;
+        transaction.commit()?;
+        Ok(())
+    }
+
     pub fn set_active_skin(&self, skin_id: &str) -> Result<(), CompanionRepositoryError> {
         let mut connection = self
             .connection

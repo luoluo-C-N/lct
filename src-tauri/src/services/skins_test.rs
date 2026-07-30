@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeSet,
     fs,
     path::PathBuf,
     time::{SystemTime, UNIX_EPOCH},
@@ -8,8 +9,12 @@ use image::{DynamicImage, GenericImageView, ImageFormat, Rgba, RgbaImage};
 use rusqlite::Connection;
 
 use crate::{
+    domain::companion::CompanionSkin,
     repository::companion::CompanionRepository,
-    services::skins::{derive_flow_colors, import_image_skin, SkinImportError},
+    services::skins::{
+        derive_flow_colors, import_image_skin, persist_normalized_skin_with_storage_for_test,
+        SkinImportError, SkinImportStorage,
+    },
 };
 
 #[test]
@@ -112,8 +117,219 @@ fn derives_a_stable_safe_palette_for_transparent_images() {
     );
 }
 
+#[test]
+fn ignores_transparent_saturated_pixels_when_deriving_flow_colors() {
+    let mut pixels = RgbaImage::from_pixel(128, 128, Rgba([255, 0, 255, 0]));
+    for y in 20..108 {
+        for x in 20..108 {
+            pixels.put_pixel(x, y, Rgba([0, 255, 0, 255]));
+        }
+    }
+
+    assert_eq!(
+        derive_flow_colors(&DynamicImage::ImageRgba8(pixels)),
+        ["#13EC13".to_owned(), "#71F471".to_owned()]
+    );
+}
+
+#[test]
+fn rejects_header_dimensions_before_decoding_or_persisting() {
+    let fixture = SkinFixture::new();
+    let source = fixture.write_image(
+        "header-too-wide.png",
+        4097,
+        128,
+        ImageFormat::Png,
+        Rgba([20, 40, 60, 255]),
+    );
+
+    assert!(matches!(
+        import_image_skin(&source, None, &fixture.data_directory, &fixture.repository),
+        Err(SkinImportError::Image(_))
+    ));
+    fixture.assert_skin_directory_is_empty();
+    assert_eq!(fixture.repository.list_skins().unwrap().len(), 3);
+}
+
+#[test]
+fn rejects_decodes_that_exceed_the_allocation_ceiling() {
+    let fixture = SkinFixture::new();
+    let source = fixture.write_image(
+        "allocation-limit.png",
+        4096,
+        4096,
+        ImageFormat::Png,
+        Rgba([20, 40, 60, 255]),
+    );
+
+    assert!(matches!(
+        import_image_skin(&source, None, &fixture.data_directory, &fixture.repository),
+        Err(SkinImportError::Image(_))
+    ));
+    fixture.assert_skin_directory_is_empty();
+    assert_eq!(fixture.repository.list_skins().unwrap().len(), 3);
+}
+
+#[test]
+fn save_failure_leaves_no_skin_row_or_temporary_directory() {
+    let fixture = SkinFixture::new();
+    let mut storage = TestSkinImportStorage::failing(TestFailure::Save);
+
+    assert!(persist_normalized_skin_with_storage_for_test(
+        solid_image(Rgba([10, 20, 30, 255])),
+        &fixture.root.join("source.png"),
+        &fixture.data_directory,
+        &mut storage,
+    )
+    .is_err());
+
+    storage.assert_empty();
+}
+
+#[test]
+fn create_failure_leaves_no_skin_row_or_temporary_directory() {
+    let fixture = SkinFixture::new();
+    let mut storage = TestSkinImportStorage::failing(TestFailure::Create);
+
+    assert!(persist_normalized_skin_with_storage_for_test(
+        solid_image(Rgba([10, 20, 30, 255])),
+        &fixture.root.join("source.png"),
+        &fixture.data_directory,
+        &mut storage,
+    )
+    .is_err());
+
+    storage.assert_empty();
+}
+
+#[test]
+fn rename_failure_rolls_back_the_new_skin_row_and_temporary_directory() {
+    let fixture = SkinFixture::new();
+    let mut storage = TestSkinImportStorage::failing(TestFailure::Rename);
+
+    assert!(persist_normalized_skin_with_storage_for_test(
+        solid_image(Rgba([10, 20, 30, 255])),
+        &fixture.root.join("source.png"),
+        &fixture.data_directory,
+        &mut storage,
+    )
+    .is_err());
+
+    storage.assert_empty();
+}
+
+#[test]
+fn rename_failure_retries_a_transient_rollback_failure_before_returning() {
+    let fixture = SkinFixture::new();
+    let mut storage = TestSkinImportStorage::failing(TestFailure::RollbackOnce);
+
+    assert!(persist_normalized_skin_with_storage_for_test(
+        solid_image(Rgba([10, 20, 30, 255])),
+        &fixture.root.join("source.png"),
+        &fixture.data_directory,
+        &mut storage,
+    )
+    .is_err());
+
+    storage.assert_empty();
+}
+
 fn solid_image(color: Rgba<u8>) -> DynamicImage {
     DynamicImage::ImageRgba8(RgbaImage::from_pixel(32, 32, color))
+}
+
+#[derive(Clone, Copy)]
+enum TestFailure {
+    Save,
+    Create,
+    Rename,
+    RollbackOnce,
+}
+
+struct TestSkinImportStorage {
+    failure: TestFailure,
+    temporary_directories: BTreeSet<PathBuf>,
+    final_directories: BTreeSet<PathBuf>,
+    skin_ids: BTreeSet<String>,
+    rollback_has_failed: bool,
+}
+
+impl TestSkinImportStorage {
+    fn failing(failure: TestFailure) -> Self {
+        Self {
+            failure,
+            temporary_directories: BTreeSet::new(),
+            final_directories: BTreeSet::new(),
+            skin_ids: BTreeSet::new(),
+            rollback_has_failed: false,
+        }
+    }
+
+    fn assert_empty(&self) {
+        assert!(self.temporary_directories.is_empty());
+        assert!(self.final_directories.is_empty());
+        assert!(self.skin_ids.is_empty());
+    }
+}
+
+impl SkinImportStorage for TestSkinImportStorage {
+    fn create_directory(&mut self, path: &std::path::Path) -> Result<(), SkinImportError> {
+        self.temporary_directories.insert(path.to_owned());
+        Ok(())
+    }
+
+    fn save_png(
+        &mut self,
+        _image: &DynamicImage,
+        path: &std::path::Path,
+    ) -> Result<(), SkinImportError> {
+        if matches!(self.failure, TestFailure::Save) {
+            return Err(std::io::Error::other("injected save failure").into());
+        }
+        self.temporary_directories.insert(path.to_owned());
+        Ok(())
+    }
+
+    fn create_skin(&mut self, skin: &CompanionSkin) -> Result<(), SkinImportError> {
+        if matches!(self.failure, TestFailure::Create) {
+            return Err(std::io::Error::other("injected create failure").into());
+        }
+        self.skin_ids.insert(skin.id.clone());
+        Ok(())
+    }
+
+    fn rollback_skin(&mut self, skin_id: &str) -> Result<(), SkinImportError> {
+        if matches!(self.failure, TestFailure::RollbackOnce) && !self.rollback_has_failed {
+            self.rollback_has_failed = true;
+            return Err(std::io::Error::other("injected rollback failure").into());
+        }
+        self.skin_ids.remove(skin_id);
+        Ok(())
+    }
+
+    fn rename_directory(
+        &mut self,
+        temporary_directory: &std::path::Path,
+        final_directory: &std::path::Path,
+    ) -> Result<(), SkinImportError> {
+        if matches!(
+            self.failure,
+            TestFailure::Rename | TestFailure::RollbackOnce
+        ) {
+            return Err(std::io::Error::other("injected rename failure").into());
+        }
+        self.temporary_directories.remove(temporary_directory);
+        self.final_directories.insert(final_directory.to_owned());
+        Ok(())
+    }
+
+    fn remove_directory(&mut self, path: &std::path::Path) -> Result<(), SkinImportError> {
+        self.temporary_directories
+            .retain(|entry| !entry.starts_with(path));
+        self.final_directories
+            .retain(|entry| !entry.starts_with(path));
+        Ok(())
+    }
 }
 
 struct SkinFixture {

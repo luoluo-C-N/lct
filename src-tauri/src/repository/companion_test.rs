@@ -165,6 +165,27 @@ fn rejects_updates_for_unknown_skins() {
 }
 
 #[test]
+fn rollback_removes_an_imported_skin_even_when_it_is_active() {
+    let repository = in_memory_repository();
+    let skin = imported_skin();
+    repository.create_skin(&skin).unwrap();
+    repository.set_active_skin(&skin.id).unwrap();
+
+    repository.rollback_imported_skin(&skin.id).unwrap();
+
+    assert!(!repository
+        .list_skins()
+        .unwrap()
+        .iter()
+        .any(|stored| stored.id == skin.id));
+    assert_eq!(
+        repository.get_settings().unwrap().active_skin_id,
+        "quiet-aurora"
+    );
+    assert_eq!(repository.list_skins().unwrap().len(), 3);
+}
+
+#[test]
 fn persists_skin_changes_and_window_settings() {
     let repository = in_memory_repository();
     let mut skin = imported_skin();
