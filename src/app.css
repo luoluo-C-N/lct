@@ -35,7 +35,7 @@ button { font: inherit; }
 .month-picker { position: relative; z-index: 5; width: fit-content; }
 .month-picker-trigger { display: inline-flex; align-items: center; gap: 9px; border: 1px solid #b4878c88; border-radius: 3px 8px 8px 3px; padding: 9px 14px 9px 11px; background: linear-gradient(90deg, #382536 0 9px, #241d30 9px); color: #f4cfaa; box-shadow: 4px 6px 14px #0005; cursor: pointer; letter-spacing: .03em; }
 .month-picker-trigger span { color: #e9a989; font-size: 12px; }
-.month-picker-shelf { position: absolute; inset: calc(100% + 10px) auto auto 0; z-index: 20; width: min(420px, calc(100vw - 56px)); margin: 0; border: 1px solid #9b7088; border-radius: 4px; padding: 18px; color: #f9eee4; background: linear-gradient(135deg, #2e2335, #191724 72%); box-shadow: 16px 22px 45px #000b; }
+.month-picker-shelf { position: fixed; inset: 50% auto auto 50%; z-index: 40; box-sizing: border-box; width: min(420px, calc(100vw - 32px)); max-height: calc(100vh - 32px); margin: 0; border: 1px solid #9b7088; border-radius: 4px; padding: 18px; overflow-y: auto; transform: translate(-50%, -50%); color: #f9eee4; background: linear-gradient(135deg, #2e2335, #191724 72%); box-shadow: 16px 22px 45px #000b; }
 .month-picker-shelf header { display: grid; grid-template-columns: 36px 1fr 36px; align-items: center; gap: 10px; margin-bottom: 16px; }
 .month-picker-shelf header strong { text-align: center; color: #f4cfaa; font-family: Georgia, "Microsoft YaHei", serif; font-weight: 500; letter-spacing: .08em; }
 .month-picker-shelf button { cursor: pointer; }

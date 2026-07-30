@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 
 export type Month = {
   year: number;
@@ -32,7 +33,7 @@ export function MonthPicker({ month, onSelect }: MonthPickerProps) {
         <span aria-hidden="true">✦</span>
         {month.year} 年 {month.month} 月
       </button>
-      {open && (
+      {open && createPortal(
         <dialog
           className="month-picker-shelf"
           open
@@ -68,7 +69,8 @@ export function MonthPicker({ month, onSelect }: MonthPickerProps) {
           <button className="month-picker-close" type="button" onClick={() => setOpen(false)}>
             合上书册
           </button>
-        </dialog>
+        </dialog>,
+        document.body,
       )}
     </div>
   );

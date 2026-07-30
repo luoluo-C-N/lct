@@ -14,7 +14,8 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({
 }));
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.mocked(invoke).mockReset();
+  vi.mocked(open).mockReset();
 });
 
 it('opens capture actions', async () => {
@@ -38,6 +39,29 @@ it('imports every image selected from the companion menu', async () => {
   expect(invoke).toHaveBeenCalledWith('import_files', {
     paths: ['C:\\images\\first.png', 'C:\\images\\second.jpg'],
   });
+});
+
+it('does not import when the image dialog is cancelled', async () => {
+  vi.mocked(open).mockResolvedValue(null);
+  render(<CompanionWindow />);
+
+  await userEvent.click(screen.getByRole('button', { name: '悬浮角色' }));
+  await userEvent.click(screen.getByRole('button', { name: '导入图片' }));
+
+  expect(await screen.findByText('未选择图片')).toBeVisible();
+  expect(invoke).not.toHaveBeenCalled();
+});
+
+it('shows a recoverable alert when importing selected images fails', async () => {
+  vi.mocked(open).mockResolvedValue(['C:\\images\\broken.png']);
+  vi.mocked(invoke).mockRejectedValue(new Error('import unavailable'));
+  render(<CompanionWindow />);
+
+  await userEvent.click(screen.getByRole('button', { name: '悬浮角色' }));
+  await userEvent.click(screen.getByRole('button', { name: '导入图片' }));
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('导入失败，请重新选择图片。');
+  expect(screen.getByRole('button', { name: '导入图片' })).toBeVisible();
 });
 
 it('shows a recoverable alert when capture fails', async () => {

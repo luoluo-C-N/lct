@@ -191,3 +191,37 @@ it('reloads only current-month asset events and unsubscribes on cleanup', async 
   unmount();
   expect(unlisten).toHaveBeenCalledOnce();
 });
+
+it('cleans delayed listener registrations after a month change and unmount', async () => {
+  const firstRegistration = deferred<() => void>();
+  const secondRegistration = deferred<() => void>();
+  const firstUnlisten = vi.fn();
+  const secondUnlisten = vi.fn();
+  vi.mocked(listen)
+    .mockReturnValueOnce(firstRegistration.promise)
+    .mockReturnValueOnce(secondRegistration.promise);
+  const { unmount } = render(
+    <MagicBookView
+      initialMonth={{ year: 2026, month: 7 }}
+      loadMonth={() => Promise.resolve([])}
+    />,
+  );
+
+  expect(await screen.findByText('这个月还没有影像')).toBeVisible();
+  await waitFor(() => expect(listen).toHaveBeenCalledTimes(1));
+
+  await userEvent.click(screen.getByRole('button', { name: '2026 年 7 月' }));
+  await userEvent.click(screen.getByRole('button', { name: '1 月' }));
+  await waitFor(() => expect(listen).toHaveBeenCalledTimes(2));
+
+  await act(async () => {
+    firstRegistration.resolve(firstUnlisten);
+  });
+  expect(firstUnlisten).toHaveBeenCalledOnce();
+
+  unmount();
+  await act(async () => {
+    secondRegistration.resolve(secondUnlisten);
+  });
+  expect(secondUnlisten).toHaveBeenCalledOnce();
+});
