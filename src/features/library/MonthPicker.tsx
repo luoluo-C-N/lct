@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 export type Month = {
@@ -16,31 +16,68 @@ const months = Array.from({ length: 12 }, (_, index) => index + 1);
 export function MonthPicker({ month, onSelect }: MonthPickerProps) {
   const [open, setOpen] = useState(false);
   const [year, setYear] = useState(month.year);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const dialogId = useId();
+
+  useEffect(() => {
+    if (!open) return;
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+
+    dialog.showModal();
+    dialog.querySelector<HTMLButtonElement>('button')?.focus();
+
+    return () => {
+      if (dialog.open) dialog.close();
+    };
+  }, [open]);
 
   function openShelf() {
     setYear(month.year);
     setOpen(true);
   }
 
+  function closeShelf() {
+    if (dialogRef.current?.open) dialogRef.current.close();
+    setOpen(false);
+    triggerRef.current?.focus();
+  }
+
   function selectMonth(selectedMonth: number) {
     onSelect({ year, month: selectedMonth });
-    setOpen(false);
+    closeShelf();
   }
 
   return (
     <div className="month-picker">
-      <button className="month-picker-trigger" type="button" onClick={openShelf}>
+      <button
+        ref={triggerRef}
+        className="month-picker-trigger"
+        type="button"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-controls={dialogId}
+        onClick={openShelf}
+      >
         <span aria-hidden="true">✦</span>
         {month.year} 年 {month.month} 月
       </button>
       {open && createPortal(
         <dialog
+          ref={dialogRef}
+          id={dialogId}
           className="month-picker-shelf"
-          open
           aria-label="选择月份"
-          onCancel={() => setOpen(false)}
+          onCancel={(event) => {
+            event.preventDefault();
+            closeShelf();
+          }}
           onKeyDown={(event) => {
-            if (event.key === 'Escape') setOpen(false);
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              closeShelf();
+            }
           }}
         >
           <header>
@@ -66,7 +103,7 @@ export function MonthPicker({ month, onSelect }: MonthPickerProps) {
               </button>
             ))}
           </div>
-          <button className="month-picker-close" type="button" onClick={() => setOpen(false)}>
+          <button className="month-picker-close" type="button" onClick={closeShelf}>
             合上书册
           </button>
         </dialog>,

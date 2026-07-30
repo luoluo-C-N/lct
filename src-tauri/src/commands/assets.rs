@@ -27,11 +27,13 @@ pub fn import_files<R: tauri::Runtime>(
         .path()
         .app_local_data_dir()
         .map_err(|error| error.to_string())?;
-    let assets = import::import_files(&paths, &data_directory, &repository)
-        .map_err(|error| error.to_string())?;
-    for asset in &assets {
-        app.emit("asset-created", asset)
+    let mut assets = Vec::with_capacity(paths.len());
+    for path in paths {
+        let asset = import::import_file(&path, &data_directory, &repository)
             .map_err(|error| error.to_string())?;
+        app.emit("asset-created", &asset)
+            .map_err(|error| error.to_string())?;
+        assets.push(asset);
     }
     Ok(assets)
 }

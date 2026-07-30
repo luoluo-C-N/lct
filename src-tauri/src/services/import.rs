@@ -1,6 +1,6 @@
 use std::{
     fs,
-    path::{Path, PathBuf},
+    path::Path,
     sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -26,15 +26,12 @@ pub enum ImportError {
     Repository(#[from] AssetRepositoryError),
 }
 
-pub fn import_files(
-    paths: &[PathBuf],
+pub fn import_file(
+    path: &Path,
     data_directory: &Path,
     repository: &AssetRepository,
-) -> Result<Vec<Asset>, ImportError> {
-    paths
-        .iter()
-        .map(|path| persist_image(path, data_directory, repository, AssetSource::Import, None))
-        .collect()
+) -> Result<Asset, ImportError> {
+    persist_image(path, data_directory, repository, AssetSource::Import, None)
 }
 
 pub(crate) fn persist_image(

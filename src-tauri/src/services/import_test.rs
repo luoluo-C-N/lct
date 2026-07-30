@@ -7,7 +7,7 @@ use std::{
 use rusqlite::Connection;
 
 use crate::{
-    domain::asset::AssetSource, repository::assets::AssetRepository, services::import::import_files,
+    domain::asset::AssetSource, repository::assets::AssetRepository, services::import::import_file,
 };
 
 #[test]
@@ -21,17 +21,16 @@ fn import_copies_png_and_creates_import_asset() {
     let repository =
         AssetRepository::from_connection(Connection::open_in_memory().unwrap()).unwrap();
 
-    let assets = import_files(&[source_path], &data_directory, &repository).unwrap();
+    let asset = import_file(&source_path, &data_directory, &repository).unwrap();
 
-    assert_eq!(assets.len(), 1);
-    assert!(assets[0].original_path.exists());
-    assert!(assets[0].preview_path.exists());
+    assert!(asset.original_path.exists());
+    assert!(asset.preview_path.exists());
     assert_eq!(
-        assets[0].preview_path.parent(),
+        asset.preview_path.parent(),
         Some(data_directory.join("assets").join("previews").as_path())
     );
-    assert_eq!(assets[0].source, AssetSource::Import);
-    assert!(assets[0].created_at < assets[0].imported_at);
+    assert_eq!(asset.source, AssetSource::Import);
+    assert!(asset.created_at < asset.imported_at);
 
     fs::remove_dir_all(temporary_directory).unwrap();
 }
@@ -45,7 +44,7 @@ fn import_removes_copied_file_when_image_is_invalid() {
     let repository =
         AssetRepository::from_connection(Connection::open_in_memory().unwrap()).unwrap();
 
-    assert!(import_files(&[source_path], &data_directory, &repository).is_err());
+    assert!(import_file(&source_path, &data_directory, &repository).is_err());
     assert_eq!(
         fs::read_dir(data_directory.join("assets").join("originals"))
             .unwrap()

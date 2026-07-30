@@ -5,6 +5,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use chrono::{DateTime, Datelike, Utc};
 use rusqlite::Connection;
 use tauri::{utils::config::Config, Listener, Manager};
 
@@ -69,6 +70,62 @@ fn import_command_emits_each_created_asset_as_its_event_payload() {
         .map(|payload| serde_json::from_str::<Asset>(&payload).unwrap())
         .collect::<Vec<_>>();
     assert_eq!(payloads, assets);
+    assert!(receiver.try_recv().is_err());
+}
+
+#[test]
+fn import_command_emits_a_persisted_asset_before_a_later_file_fails() {
+    let temporary_directory = temporary_directory("partial-import-events");
+    let valid_source_path = temporary_directory.join("valid.png");
+    let invalid_source_path = temporary_directory.join("invalid.png");
+    image::RgbaImage::from_pixel(1, 1, image::Rgba([255, 0, 0, 255]))
+        .save(&valid_source_path)
+        .unwrap();
+    fs::write(&invalid_source_path, b"not a PNG").unwrap();
+    let valid_created_at =
+        DateTime::<Utc>::from(fs::metadata(&valid_source_path).unwrap().created().unwrap());
+    let repository =
+        AssetRepository::from_connection(Connection::open_in_memory().unwrap()).unwrap();
+    let app = tauri::test::mock_builder()
+        .manage(repository)
+        .build(tauri::generate_context!())
+        .unwrap();
+    let app_handle = app.handle().clone();
+    let (sender, receiver) = mpsc::channel();
+    app_handle.listen("asset-created", move |event| {
+        sender.send(event.payload().to_owned()).unwrap();
+    });
+
+    let result = commands::assets::import_files(
+        vec![valid_source_path, invalid_source_path],
+        app_handle,
+        app.state(),
+    );
+    let received_payload = receiver.recv_timeout(Duration::from_secs(1));
+    let persisted_assets = app
+        .state::<AssetRepository>()
+        .list_by_month(valid_created_at.year(), valid_created_at.month())
+        .unwrap();
+    let persisted_paths = persisted_assets
+        .iter()
+        .flat_map(|asset| [&asset.original_path, &asset.preview_path])
+        .cloned()
+        .collect::<Vec<_>>();
+    let persisted_files_exist = persisted_paths.iter().all(|path| path.exists());
+
+    for path in persisted_paths {
+        fs::remove_file(path).unwrap();
+    }
+    fs::remove_dir_all(temporary_directory).unwrap();
+
+    assert!(result
+        .expect_err("mixed import batch must report the invalid file")
+        .contains("failed to decode or encode an image"));
+    assert_eq!(persisted_assets.len(), 1);
+    assert!(persisted_files_exist);
+    let emitted_asset =
+        serde_json::from_str::<Asset>(&received_payload.expect("persisted asset event")).unwrap();
+    assert_eq!(emitted_asset, persisted_assets[0]);
     assert!(receiver.try_recv().is_err());
 }
 
