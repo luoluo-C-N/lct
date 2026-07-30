@@ -5,6 +5,7 @@ use rusqlite::{params, Connection, OptionalExtension, Row};
 use thiserror::Error;
 
 use crate::domain::asset::{Asset, AssetSource};
+use crate::domain::companion::CompanionSkin;
 
 pub struct AssetRepository {
     connection: Mutex<Connection>,
@@ -157,7 +158,8 @@ impl AssetRepository {
             let mut asset = Asset::try_from(stored)?;
             asset.tags = tags;
             Ok(asset)
-        }).collect()
+        })
+        .collect()
     }
 }
 
@@ -198,7 +200,7 @@ pub(crate) fn migrate_schema(connection: &Connection) -> Result<(), AssetReposit
         .optional()?;
 
     match version.as_deref() {
-        Some("2") => {}
+        Some("2") | Some("3") => {}
         Some("1") | None if assets_exist => {
             connection.execute_batch(
                 "ALTER TABLE assets ADD COLUMN deleted_at TEXT;
@@ -227,7 +229,9 @@ pub(crate) fn migrate_schema(connection: &Connection) -> Result<(), AssetReposit
             )?;
         }
         Some(version) => {
-            return Err(AssetRepositoryError::UnsupportedSchemaVersion(version.to_owned()));
+            return Err(AssetRepositoryError::UnsupportedSchemaVersion(
+                version.to_owned(),
+            ));
         }
     }
 
@@ -243,8 +247,57 @@ pub(crate) fn migrate_schema(connection: &Connection) -> Result<(), AssetReposit
             tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
             PRIMARY KEY (asset_id, tag_id)
          );
-         INSERT INTO app_meta(key, value) VALUES ('schema_version', '2')
+         CREATE TABLE IF NOT EXISTS companion_skins (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            source TEXT NOT NULL,
+            visual_preset TEXT NOT NULL,
+            texture_path TEXT,
+            preview_path TEXT,
+            flow_colors TEXT NOT NULL,
+            flow_speed REAL NOT NULL,
+            flow_intensity REAL NOT NULL,
+            created_at TEXT NOT NULL
+         );
+         CREATE TABLE IF NOT EXISTS companion_settings (
+            singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+            active_skin_id TEXT NOT NULL REFERENCES companion_skins(id),
+            motion_enabled INTEGER NOT NULL,
+            visible INTEGER NOT NULL,
+            placement_json TEXT
+         );
+         INSERT INTO app_meta(key, value) VALUES ('schema_version', '3')
          ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
+    )?;
+    seed_builtin_skins(connection)?;
+    Ok(())
+}
+
+fn seed_builtin_skins(connection: &Connection) -> Result<(), AssetRepositoryError> {
+    for skin in CompanionSkin::builtins() {
+        connection.execute(
+            "INSERT INTO companion_skins (
+                id, name, source, visual_preset, texture_path, preview_path, flow_colors, flow_speed, flow_intensity, created_at
+            ) VALUES (?1, ?2, ?3, ?4, NULL, NULL, ?5, ?6, ?7, ?8)
+            ON CONFLICT(id) DO NOTHING",
+            params![
+                skin.id,
+                skin.name,
+                skin.source.as_str(),
+                skin.visual_preset.as_str(),
+                serde_json::to_string(&skin.flow_colors).expect("builtin flow colors serialize"),
+                skin.flow_speed,
+                skin.flow_intensity,
+                skin.created_at.to_rfc3339(),
+            ],
+        )?;
+    }
+    connection.execute(
+        "INSERT INTO companion_settings (
+            singleton, active_skin_id, motion_enabled, visible, placement_json
+        ) VALUES (1, 'quiet-aurora', 1, 1, NULL)
+        ON CONFLICT(singleton) DO NOTHING",
+        [],
     )?;
     Ok(())
 }
@@ -289,8 +342,15 @@ impl TryFrom<StoredAsset> for Asset {
             album_id: stored.album_id,
             tags: Vec::new(),
             favorite: stored.favorite != 0,
-            deleted_at: stored.deleted_at.map(|value| parse_timestamp("deleted_at", value)).transpose()?,
-            capture_mode: stored.capture_mode.as_deref().map(crate::domain::asset::CaptureMode::parse).flatten(),
+            deleted_at: stored
+                .deleted_at
+                .map(|value| parse_timestamp("deleted_at", value))
+                .transpose()?,
+            capture_mode: stored
+                .capture_mode
+                .as_deref()
+                .map(crate::domain::asset::CaptureMode::parse)
+                .flatten(),
             annotation_data: stored.annotation_data,
             sync_version: stored.sync_version,
             cloud_id: stored.cloud_id,

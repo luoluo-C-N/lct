@@ -29,7 +29,11 @@ fn new_asset(created_at: &str) -> Asset {
         album_id: None,
         tags: Vec::new(),
         favorite: false,
-        deleted_at: Some(DateTime::parse_from_rfc3339("2026-07-26T00:00:00Z").unwrap().with_timezone(&Utc)),
+        deleted_at: Some(
+            DateTime::parse_from_rfc3339("2026-07-26T00:00:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+        ),
         capture_mode: Some(crate::domain::asset::CaptureMode::Fullscreen),
         annotation_data: Some("{\"shapes\":[]}".to_owned()),
         sync_version: 1,
@@ -45,7 +49,10 @@ fn lists_only_assets_from_requested_month() {
 
     let assets = repo.list_by_month(2026, 7).unwrap();
     assert_eq!(assets.len(), 1);
-    assert_eq!(assets[0].capture_mode, Some(crate::domain::asset::CaptureMode::Fullscreen));
+    assert_eq!(
+        assets[0].capture_mode,
+        Some(crate::domain::asset::CaptureMode::Fullscreen)
+    );
     assert_eq!(assets[0].cloud_id.as_deref(), Some("cloud-1"));
 }
 
@@ -78,7 +85,7 @@ fn loads_tags_from_the_relationship_tables() {
 }
 
 #[test]
-fn migrates_a_v1_database_to_v2_without_rebuilding_assets() {
+fn migrates_a_v1_database_to_v3_without_rebuilding_assets() {
     let connection = Connection::open_in_memory().unwrap();
     connection
         .execute_batch(
@@ -109,17 +116,22 @@ fn migrates_a_v1_database_to_v2_without_rebuilding_assets() {
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
     let version: String = connection
-        .query_row("SELECT value FROM app_meta WHERE key = 'schema_version'", [], |row| row.get(0))
+        .query_row(
+            "SELECT value FROM app_meta WHERE key = 'schema_version'",
+            [],
+            |row| row.get(0),
+        )
         .unwrap();
 
     assert!(columns.contains(&"deleted_at".to_owned()));
     assert!(columns.contains(&"capture_mode".to_owned()));
     assert!(columns.contains(&"annotation_data".to_owned()));
     assert!(columns.contains(&"cloud_id".to_owned()));
-    assert_eq!(version, "2");
+    assert_eq!(version, "3");
     assert_eq!(
         connection
-            .query_row("SELECT id FROM assets WHERE id = 'existing'", [], |row| row.get::<_, String>(0))
+            .query_row("SELECT id FROM assets WHERE id = 'existing'", [], |row| row
+                .get::<_, String>(0))
             .unwrap(),
         "existing"
     );
