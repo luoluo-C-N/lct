@@ -11,6 +11,7 @@ mod asset_protocol_config_test;
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let data_directory = app.path().app_local_data_dir()?;
             std::fs::create_dir_all(&data_directory)?;

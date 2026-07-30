@@ -2,12 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   listAssetsByDay,
   listAssetsByMonth,
+  subscribeToAssetCreated,
   type Asset,
 } from '../../lib/assets';
 import { DateFlow } from './DateFlow';
 import { ImageStack } from './ImageStack';
+import type { Month } from './MonthPicker';
 
-type Month = { year: number; month: number };
 type LoadMonth = (year: number, month: number) => Promise<Asset[]>;
 type LoadDay = (year: number, month: number, day: number) => Promise<Asset[]>;
 type RequestState = 'loading' | 'ready' | 'failed';
@@ -17,8 +18,6 @@ type MagicBookViewProps = {
   loadMonth?: LoadMonth;
   loadDay?: LoadDay;
 };
-
-const availableMonths = Array.from({ length: 12 }, (_, index) => index + 1);
 
 export function MagicBookView({
   initialMonth,
@@ -31,7 +30,6 @@ export function MagicBookView({
   const [selectedDayAssets, setSelectedDayAssets] = useState<Asset[] | null>(null);
   const [requestState, setRequestState] = useState<RequestState>('loading');
   const [dayRequestState, setDayRequestState] = useState<RequestState>('ready');
-  const [pickerOpen, setPickerOpen] = useState(false);
   const [retryVersion, setRetryVersion] = useState(0);
   const dayRequestVersion = useRef(0);
 
@@ -73,14 +71,33 @@ export function MagicBookView({
     };
   }, [loadMonth, month, retryVersion]);
 
-  function selectMonth(nextMonth: number) {
+  useEffect(() => {
+    let disposed = false;
+    let stopListening: (() => void) | undefined;
+
+    void subscribeToAssetCreated((asset) => {
+      const [assetYear, assetMonth] = asset.createdAt.slice(0, 7).split('-').map(Number);
+      if (assetYear === month.year && assetMonth === month.month) {
+        setRetryVersion((version) => version + 1);
+      }
+    }).then((unlisten) => {
+      if (disposed) unlisten();
+      else stopListening = unlisten;
+    });
+
+    return () => {
+      disposed = true;
+      stopListening?.();
+    };
+  }, [month.month, month.year]);
+
+  function selectMonth(nextMonth: Month) {
     dayRequestVersion.current += 1;
     setRequestState('loading');
     setMonthAssets([]);
     setSelectedDate(null);
     setSelectedDayAssets(null);
-    setMonth({ year: month.year, month: nextMonth });
-    setPickerOpen(false);
+    setMonth(nextMonth);
   }
 
   async function requestDay(date: string) {
@@ -136,19 +153,10 @@ export function MagicBookView({
         month={month}
         dates={dates}
         selectedDate={selectedDate}
-        onOpenMonthPicker={() => setPickerOpen(true)}
+        onSelectMonth={selectMonth}
         onSelectDate={selectDate}
       />
       <section aria-label="图片叠页">{renderImageContent()}</section>
-      {pickerOpen && (
-        <dialog open aria-label="选择月份">
-          {availableMonths.map((value) => (
-            <button key={value} type="button" onClick={() => selectMonth(value)}>
-              {value} 月
-            </button>
-          ))}
-        </dialog>
-      )}
     </main>
   );
 }

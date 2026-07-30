@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom/vitest';
-import { act, render, screen } from '@testing-library/react';
+import { listen, type Event } from '@tauri-apps/api/event';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { Asset } from '../../lib/assets';
 import { MagicBookView } from './MagicBookView';
@@ -8,6 +9,15 @@ vi.mock('@tauri-apps/api/core', () => ({
   convertFileSrc: (path: string) => `asset://localhost/${path}`,
   invoke: vi.fn(),
 }));
+
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: vi.fn(),
+}));
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(listen).mockResolvedValue(vi.fn());
+});
 
 function asset(id: string, createdAt: string): Asset {
   return {
@@ -136,4 +146,48 @@ it('replaces the selected date assets with the day response', async () => {
 
   expect(await screen.findByRole('img', { name: 'refreshed' })).toBeVisible();
   expect(screen.queryByRole('img', { name: 'cached' })).not.toBeInTheDocument();
+});
+
+it('reloads only current-month asset events and unsubscribes on cleanup', async () => {
+  let assetCreated: ((event: Event<Asset>) => void) | undefined;
+  const unlisten = vi.fn();
+  vi.mocked(listen).mockImplementation(async (_event, handler) => {
+    assetCreated = handler as (event: Event<Asset>) => void;
+    return unlisten;
+  });
+  const loadMonth = vi.fn()
+    .mockResolvedValueOnce([asset('original', '2026-07-24T12:00:00Z')])
+    .mockResolvedValueOnce([asset('current-month', '2026-07-26T12:00:00Z')]);
+  const { unmount } = render(
+    <MagicBookView
+      initialMonth={{ year: 2026, month: 7 }}
+      loadMonth={loadMonth}
+    />,
+  );
+
+  expect(await screen.findByRole('img', { name: 'original' })).toBeVisible();
+  await waitFor(() => expect(assetCreated).toBeDefined());
+
+  act(() => {
+    assetCreated?.({
+      event: 'asset-created',
+      id: 1,
+      payload: asset('other-month', '2026-08-01T12:00:00Z'),
+    });
+  });
+  expect(screen.getByRole('img', { name: 'original' })).toBeVisible();
+  expect(loadMonth).toHaveBeenCalledTimes(1);
+
+  act(() => {
+    assetCreated?.({
+      event: 'asset-created',
+      id: 2,
+      payload: asset('event-asset', '2026-07-26T12:00:00Z'),
+    });
+  });
+  expect(await screen.findByRole('img', { name: 'current-month' })).toBeVisible();
+  expect(screen.queryByRole('img', { name: 'original' })).not.toBeInTheDocument();
+
+  unmount();
+  expect(unlisten).toHaveBeenCalledOnce();
 });

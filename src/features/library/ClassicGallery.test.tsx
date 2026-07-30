@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import { invoke } from '@tauri-apps/api/core';
-import { render, screen, waitFor } from '@testing-library/react';
+import { listen, type Event } from '@tauri-apps/api/event';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from '../../App';
 import type { Asset } from '../../lib/assets';
@@ -11,8 +12,13 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }));
 
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: vi.fn(),
+}));
+
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(listen).mockResolvedValue(vi.fn());
 });
 
 function asset(id: string, createdAt: string): Asset {
@@ -76,6 +82,27 @@ it('shows an empty state when the initial month has no assets', async () => {
   expect(await screen.findByText('这个月还没有影像')).toBeVisible();
 });
 
+it('replaces gallery assets after selecting another year and month', async () => {
+  const loadMonth = vi.fn()
+    .mockResolvedValueOnce([asset('july', '2026-07-25T12:00:00Z')])
+    .mockResolvedValueOnce([asset('january', '2027-01-18T12:00:00Z')]);
+  render(
+    <ClassicGallery
+      initialMonth={{ year: 2026, month: 7 }}
+      loadMonth={loadMonth}
+    />,
+  );
+
+  expect(await screen.findByRole('img', { name: 'july' })).toBeVisible();
+  await userEvent.click(screen.getByRole('button', { name: '2026 年 7 月' }));
+  await userEvent.click(screen.getByRole('button', { name: '下一年' }));
+  await userEvent.click(screen.getByRole('button', { name: '1 月' }));
+
+  expect(await screen.findByRole('img', { name: 'january' })).toBeVisible();
+  expect(screen.queryByRole('img', { name: 'july' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: '2027 年 1 月' })).toBeVisible();
+});
+
 it('renders queried assets after switching the application to gallery mode', async () => {
   vi.mocked(invoke).mockResolvedValue([
     asset('gallery-memory', '2026-07-25T12:00:00Z'),
@@ -108,4 +135,48 @@ it('initializes both application views with the current local month', async () =
       { year: 2031, month: 2 },
     );
   });
+});
+
+it('reloads only current-month asset events and unsubscribes on cleanup', async () => {
+  let assetCreated: ((event: Event<Asset>) => void) | undefined;
+  const unlisten = vi.fn();
+  vi.mocked(listen).mockImplementation(async (_event, handler) => {
+    assetCreated = handler as (event: Event<Asset>) => void;
+    return unlisten;
+  });
+  const loadMonth = vi.fn()
+    .mockResolvedValueOnce([asset('original', '2026-07-24T12:00:00Z')])
+    .mockResolvedValueOnce([asset('current-month', '2026-07-26T12:00:00Z')]);
+  const { unmount } = render(
+    <ClassicGallery
+      initialMonth={{ year: 2026, month: 7 }}
+      loadMonth={loadMonth}
+    />,
+  );
+
+  expect(await screen.findByRole('img', { name: 'original' })).toBeVisible();
+  await waitFor(() => expect(assetCreated).toBeDefined());
+
+  act(() => {
+    assetCreated?.({
+      event: 'asset-created',
+      id: 1,
+      payload: asset('other-month', '2026-08-01T12:00:00Z'),
+    });
+  });
+  expect(screen.getByRole('img', { name: 'original' })).toBeVisible();
+  expect(loadMonth).toHaveBeenCalledTimes(1);
+
+  act(() => {
+    assetCreated?.({
+      event: 'asset-created',
+      id: 2,
+      payload: asset('event-asset', '2026-07-26T12:00:00Z'),
+    });
+  });
+  expect(await screen.findByRole('img', { name: 'current-month' })).toBeVisible();
+  expect(screen.queryByRole('img', { name: 'original' })).not.toBeInTheDocument();
+
+  unmount();
+  expect(unlisten).toHaveBeenCalledOnce();
 });

@@ -1,4 +1,5 @@
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 
 export type Asset = {
   id: string;
@@ -19,3 +20,6 @@ export const listAssetsByDay = (year: number, month: number, day: number) =>
   invoke<Asset[]>('list_assets_by_day', { year, month, day });
 
 export const assetPreviewUrl = (path: string) => convertFileSrc(path);
+
+export const subscribeToAssetCreated = (onAssetCreated: (asset: Asset) => void) =>
+  listen<Asset>('asset-created', (event) => onAssetCreated(event.payload));

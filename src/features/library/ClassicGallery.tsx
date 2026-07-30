@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react';
 import {
   assetPreviewUrl,
   listAssetsByMonth,
+  subscribeToAssetCreated,
   type Asset,
 } from '../../lib/assets';
+import { MonthPicker, type Month } from './MonthPicker';
 
-type Month = { year: number; month: number };
 type LoadMonth = (year: number, month: number) => Promise<Asset[]>;
 type RequestStatus = 'loading' | 'ready' | 'error';
 
@@ -18,6 +19,7 @@ export function ClassicGallery({
   initialMonth,
   loadMonth = listAssetsByMonth,
 }: ClassicGalleryProps) {
+  const [month, setMonth] = useState(initialMonth);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [status, setStatus] = useState<RequestStatus>('loading');
   const [retryVersion, setRetryVersion] = useState(0);
@@ -29,7 +31,7 @@ export function ClassicGallery({
 
     async function load() {
       try {
-        const nextAssets = await loadMonth(initialMonth.year, initialMonth.month);
+        const nextAssets = await loadMonth(month.year, month.month);
         if (!active) return;
         setAssets(nextAssets);
         setStatus('ready');
@@ -42,10 +44,33 @@ export function ClassicGallery({
     return () => {
       active = false;
     };
-  }, [initialMonth.month, initialMonth.year, loadMonth, retryVersion]);
+  }, [loadMonth, month.month, month.year, retryVersion]);
+
+  useEffect(() => {
+    let disposed = false;
+    let stopListening: (() => void) | undefined;
+
+    void subscribeToAssetCreated((asset) => {
+      const [assetYear, assetMonth] = asset.createdAt.slice(0, 7).split('-').map(Number);
+      if (assetYear === month.year && assetMonth === month.month) {
+        setRetryVersion((version) => version + 1);
+      }
+    }).then((unlisten) => {
+      if (disposed) unlisten();
+      else stopListening = unlisten;
+    });
+
+    return () => {
+      disposed = true;
+      stopListening?.();
+    };
+  }, [month.month, month.year]);
 
   return (
     <section className="classic-gallery" aria-label="传统图库">
+      <div className="classic-gallery-toolbar">
+        <MonthPicker month={month} onSelect={setMonth} />
+      </div>
       {status === 'loading' && <p role="status">正在加载本月图片…</p>}
       {status === 'error' && (
         <div className="classic-gallery-state" role="alert">

@@ -1,10 +1,10 @@
-type Month = { year: number; month: number };
+import { MonthPicker, type Month } from './MonthPicker';
 
 type DateFlowProps = {
   month: Month;
   dates: string[];
   selectedDate: string | null;
-  onOpenMonthPicker: () => void;
+  onSelectMonth: (month: Month) => void;
   onSelectDate: (date: string) => void;
 };
 
@@ -14,14 +14,12 @@ export function DateFlow({
   month,
   dates,
   selectedDate,
-  onOpenMonthPicker,
+  onSelectMonth,
   onSelectDate,
 }: DateFlowProps) {
   return (
     <aside aria-label="日期流">
-      <button type="button" onClick={onOpenMonthPicker}>
-        {month.year} 年 {month.month} 月
-      </button>
+      <MonthPicker month={month} onSelect={onSelectMonth} />
       <ul>
         {dates.map((date) => {
           const [year, selectedMonth, day] = date.split('-').map(Number);
