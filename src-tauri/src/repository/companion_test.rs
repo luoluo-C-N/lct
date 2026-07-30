@@ -131,7 +131,7 @@ fn rejects_external_builtin_skins_and_reserved_skin_mutations() {
     ));
 
     let mut porcelain = CompanionSkin::builtin(VisualPreset::PorcelainPearl);
-    porcelain.source = SkinSource::Imported;
+    porcelain.source = SkinSource::Image;
     porcelain.flow_colors = vec!["#000000".to_owned()];
 
     assert!(matches!(
@@ -233,11 +233,41 @@ fn persists_skin_changes_and_window_settings() {
     );
 }
 
+#[test]
+fn round_trips_image_and_package_skin_sources() {
+    let repository = in_memory_repository();
+    let image = imported_skin();
+    let mut package = imported_skin();
+    package.id = "package-skin".to_owned();
+    package.source = SkinSource::Package;
+
+    repository.create_skin(&image).unwrap();
+    repository.create_skin(&package).unwrap();
+
+    let stored = repository.list_skins().unwrap();
+    assert_eq!(
+        stored
+            .iter()
+            .find(|skin| skin.id == image.id)
+            .unwrap()
+            .source,
+        SkinSource::Image
+    );
+    assert_eq!(
+        stored
+            .iter()
+            .find(|skin| skin.id == package.id)
+            .unwrap()
+            .source,
+        SkinSource::Package
+    );
+}
+
 fn imported_skin() -> CompanionSkin {
     CompanionSkin {
         id: "imported-skin".to_owned(),
         name: "Imported skin".to_owned(),
-        source: SkinSource::Imported,
+        source: SkinSource::Image,
         visual_preset: VisualPreset::DeepInk,
         texture_path: Some("C:/skins/texture.png".into()),
         preview_path: Some("C:/skins/preview.png".into()),

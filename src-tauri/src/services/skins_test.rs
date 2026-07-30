@@ -1,19 +1,23 @@
 use std::{
     collections::BTreeSet,
-    fs,
+    fs::{self, OpenOptions},
+    io::{Cursor, Write},
     path::PathBuf,
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use image::{DynamicImage, GenericImageView, ImageFormat, Rgba, RgbaImage};
 use rusqlite::Connection;
+use serde_json::json;
+use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
 
 use crate::{
-    domain::companion::CompanionSkin,
+    domain::companion::{CompanionSkin, SkinSource},
     repository::companion::CompanionRepository,
     services::skins::{
-        derive_flow_colors, import_image_skin, persist_normalized_skin_with_storage_for_test,
-        SkinImportError, SkinImportStorage,
+        derive_flow_colors, import_image_skin, import_zip_skin,
+        persist_normalized_skin_with_storage_for_test, SkinImportError, SkinImportErrorKind,
+        SkinImportStorage,
     },
 };
 
@@ -37,6 +41,7 @@ fn imports_and_center_crops_a_rectangular_webp() {
     .unwrap();
 
     assert_eq!(skin.name, "Wide purple");
+    assert_eq!(skin.source, SkinSource::Image);
     assert!(skin.texture_path.as_ref().unwrap().ends_with("texture.png"));
     assert_eq!(
         image::open(skin.texture_path.unwrap())
@@ -51,6 +56,250 @@ fn imports_and_center_crops_a_rectangular_webp() {
         (256, 256)
     );
     assert_eq!(fixture.repository.list_skins().unwrap().len(), 4);
+}
+
+#[test]
+fn zip_imports_a_v1_package_after_full_validation() {
+    let fixture = SkinFixture::new();
+    let package = fixture.write_zip(
+        "valid.zip",
+        vec![
+            zip_file("manifest.json", valid_manifest("texture.webp")),
+            zip_file("texture.webp", valid_webp_bytes(128, 128)),
+        ],
+    );
+
+    let skin =
+        import_zip_skin(&package, &fixture.data_directory, &fixture.repository).unwrap();
+
+    assert_eq!(skin.name, "Lavender package");
+    assert_eq!(skin.source, SkinSource::Package);
+    assert_eq!(skin.flow_colors, vec!["#B79CFF", "#FFE4B5"]);
+    assert_eq!(skin.flow_speed, 1.25);
+    assert_eq!(skin.flow_intensity, 0.8);
+    assert_eq!(
+        image::open(skin.texture_path.unwrap())
+            .unwrap()
+            .dimensions(),
+        (128, 128)
+    );
+    assert_eq!(fixture.repository.list_skins().unwrap().len(), 4);
+}
+
+#[test]
+fn zip_rejects_path_traversal_before_persisting() {
+    assert_zip_rejected(
+        vec![
+            zip_file("manifest.json", valid_manifest("texture.webp")),
+            zip_file("texture.webp", valid_webp_bytes(128, 128)),
+            zip_file("../escape.png", valid_png_bytes(128, 128)),
+        ],
+        SkinImportErrorKind::UnsafePath,
+    );
+}
+
+#[test]
+fn zip_rejects_symlink_entries_before_persisting() {
+    assert_zip_rejected(
+        vec![
+            zip_file("manifest.json", valid_manifest("texture.webp")),
+            TestZipEntry::Symlink("texture.webp".to_owned(), "../outside.webp".to_owned()),
+        ],
+        SkinImportErrorKind::Symlink,
+    );
+}
+
+#[test]
+fn zip_rejects_directory_entries_before_persisting() {
+    assert_zip_rejected(
+        vec![
+            zip_file("manifest.json", valid_manifest("texture.webp")),
+            zip_file("texture.webp", valid_webp_bytes(128, 128)),
+            TestZipEntry::Directory("nested/".to_owned()),
+        ],
+        SkinImportErrorKind::UnsupportedEntry,
+    );
+}
+
+#[test]
+fn zip_rejects_archives_over_the_compressed_size_limit() {
+    let fixture = SkinFixture::new();
+    let package = fixture.write_zip(
+        "compressed-too-large.zip",
+        vec![
+            zip_file("manifest.json", valid_manifest("texture.webp")),
+            zip_file("texture.webp", valid_webp_bytes(128, 128)),
+        ],
+    );
+    let file = OpenOptions::new().append(true).open(&package).unwrap();
+    file.set_len(20 * 1024 * 1024 + 1).unwrap();
+
+    fixture.assert_zip_rejected(&package, SkinImportErrorKind::ArchiveTooLarge);
+}
+
+#[test]
+fn zip_rejects_archives_over_the_uncompressed_size_limit() {
+    assert_zip_rejected(
+        vec![
+            zip_file("manifest.json", valid_manifest("texture.webp")),
+            zip_file("texture.webp", valid_webp_bytes(128, 128)),
+            zip_file("unused.png", vec![0; 40 * 1024 * 1024]),
+        ],
+        SkinImportErrorKind::ArchiveTooLarge,
+    );
+}
+
+#[test]
+fn zip_rejects_archives_over_the_entry_count_limit() {
+    let mut entries = vec![
+        zip_file("manifest.json", valid_manifest("texture.webp")),
+        zip_file("texture.webp", valid_webp_bytes(128, 128)),
+    ];
+    for index in 0..15 {
+        entries.push(zip_file(
+            &format!("unused-{index}.png"),
+            valid_png_bytes(128, 128),
+        ));
+    }
+    assert_zip_rejected(entries, SkinImportErrorKind::TooManyEntries);
+}
+
+#[test]
+fn zip_rejects_manifests_over_the_size_limit() {
+    let mut manifest = valid_manifest("texture.webp");
+    manifest.resize(64 * 1024 + 1, b' ');
+    assert_zip_rejected(
+        vec![
+            zip_file("manifest.json", manifest),
+            zip_file("texture.webp", valid_webp_bytes(128, 128)),
+        ],
+        SkinImportErrorKind::ManifestTooLarge,
+    );
+}
+
+#[test]
+fn zip_rejects_unsupported_and_unreferenced_entries() {
+    assert_zip_rejected(
+        vec![
+            zip_file("manifest.json", valid_manifest("texture.webp")),
+            zip_file("texture.webp", valid_webp_bytes(128, 128)),
+            zip_file("payload.html", b"<script>bad()</script>".to_vec()),
+        ],
+        SkinImportErrorKind::UnsupportedEntry,
+    );
+    assert_zip_rejected(
+        vec![
+            zip_file("manifest.json", valid_manifest("texture.webp")),
+            zip_file("texture.webp", valid_webp_bytes(128, 128)),
+            zip_file("unused.png", valid_png_bytes(128, 128)),
+        ],
+        SkinImportErrorKind::UnreferencedEntry,
+    );
+}
+
+#[test]
+fn zip_rejects_unknown_manifest_versions_and_remote_textures() {
+    let mut unknown_version = valid_manifest_value("texture.webp");
+    unknown_version["version"] = json!(2);
+    assert_zip_rejected(
+        vec![
+            zip_file(
+                "manifest.json",
+                serde_json::to_vec(&unknown_version).unwrap(),
+            ),
+            zip_file("texture.webp", valid_webp_bytes(128, 128)),
+        ],
+        SkinImportErrorKind::UnsupportedVersion,
+    );
+
+    assert_zip_rejected(
+        vec![zip_file(
+            "manifest.json",
+            valid_manifest("https://attacker.invalid/texture.webp"),
+        )],
+        SkinImportErrorKind::RemoteUrl,
+    );
+}
+
+#[test]
+fn zip_rejects_invalid_colors_and_motion_fields() {
+    let mut invalid_color = valid_manifest_value("texture.webp");
+    invalid_color["flowColors"] = json!(["#B79CFF", "#NOTHEX"]);
+    assert_zip_rejected(
+        vec![
+            zip_file(
+                "manifest.json",
+                serde_json::to_vec(&invalid_color).unwrap(),
+            ),
+            zip_file("texture.webp", valid_webp_bytes(128, 128)),
+        ],
+        SkinImportErrorKind::InvalidColor,
+    );
+
+    let mut invalid_speed = valid_manifest_value("texture.webp");
+    invalid_speed["flowSpeed"] = json!("very fast");
+    assert_zip_rejected(
+        vec![
+            zip_file(
+                "manifest.json",
+                serde_json::to_vec(&invalid_speed).unwrap(),
+            ),
+            zip_file("texture.webp", valid_webp_bytes(128, 128)),
+        ],
+        SkinImportErrorKind::InvalidMotion,
+    );
+
+    let mut invalid_intensity = valid_manifest_value("texture.webp");
+    invalid_intensity["flowIntensity"] = json!(null);
+    assert_zip_rejected(
+        vec![
+            zip_file(
+                "manifest.json",
+                serde_json::to_vec(&invalid_intensity).unwrap(),
+            ),
+            zip_file("texture.webp", valid_webp_bytes(128, 128)),
+        ],
+        SkinImportErrorKind::InvalidMotion,
+    );
+}
+
+#[test]
+fn zip_clamps_numeric_motion_fields_to_package_ranges() {
+    let fixture = SkinFixture::new();
+    let mut manifest = valid_manifest_value("texture.webp");
+    manifest["flowSpeed"] = json!(9.0);
+    manifest["flowIntensity"] = json!(-2.0);
+    let package = fixture.write_zip(
+        "clamped.zip",
+        vec![
+            zip_file("manifest.json", serde_json::to_vec(&manifest).unwrap()),
+            zip_file("texture.webp", valid_webp_bytes(128, 128)),
+        ],
+    );
+
+    let skin =
+        import_zip_skin(&package, &fixture.data_directory, &fixture.repository).unwrap();
+
+    assert_eq!(skin.flow_speed, 2.0);
+    assert_eq!(skin.flow_intensity, 0.0);
+}
+
+#[test]
+fn zip_rejects_missing_textures_and_invalid_decoded_dimensions() {
+    assert_zip_rejected(
+        vec![zip_file(
+            "manifest.json",
+            valid_manifest("texture.webp"),
+        )],
+        SkinImportErrorKind::MissingTexture,
+    );
+    assert_zip_rejected(
+        vec![
+            zip_file("manifest.json", valid_manifest("texture.webp")),
+            zip_file("texture.webp", valid_webp_bytes(64, 64)),
+        ],
+        SkinImportErrorKind::InvalidDimensions,
+    );
 }
 
 #[test]
@@ -298,6 +547,57 @@ fn solid_image(color: Rgba<u8>) -> DynamicImage {
     DynamicImage::ImageRgba8(RgbaImage::from_pixel(32, 32, color))
 }
 
+fn assert_zip_rejected(entries: Vec<TestZipEntry>, expected: SkinImportErrorKind) {
+    let fixture = SkinFixture::new();
+    let package = fixture.write_zip("malicious.zip", entries);
+    fixture.assert_zip_rejected(&package, expected);
+}
+
+fn zip_file(name: &str, contents: Vec<u8>) -> TestZipEntry {
+    TestZipEntry::File(name.to_owned(), contents)
+}
+
+fn valid_manifest(texture: &str) -> Vec<u8> {
+    serde_json::to_vec(&valid_manifest_value(texture)).unwrap()
+}
+
+fn valid_manifest_value(texture: &str) -> serde_json::Value {
+    json!({
+        "version": 1,
+        "name": "Lavender package",
+        "texture": texture,
+        "flowColors": ["#B79CFF", "#FFE4B5"],
+        "flowSpeed": 1.25,
+        "flowIntensity": 0.8
+    })
+}
+
+fn valid_webp_bytes(width: u32, height: u32) -> Vec<u8> {
+    image_bytes(width, height, ImageFormat::WebP)
+}
+
+fn valid_png_bytes(width: u32, height: u32) -> Vec<u8> {
+    image_bytes(width, height, ImageFormat::Png)
+}
+
+fn image_bytes(width: u32, height: u32, format: ImageFormat) -> Vec<u8> {
+    let mut bytes = Cursor::new(Vec::new());
+    DynamicImage::ImageRgba8(RgbaImage::from_pixel(
+        width,
+        height,
+        Rgba([183, 156, 255, 255]),
+    ))
+    .write_to(&mut bytes, format)
+    .unwrap();
+    bytes.into_inner()
+}
+
+enum TestZipEntry {
+    File(String, Vec<u8>),
+    Symlink(String, String),
+    Directory(String),
+}
+
 fn assert_compensation(error: SkinImportError, operation: &str, cleanup: &str) {
     match error {
         SkinImportError::Compensation {
@@ -463,6 +763,38 @@ impl SkinFixture {
             .save_with_format(&path, format)
             .unwrap();
         path
+    }
+
+    fn write_zip(&self, name: &str, entries: Vec<TestZipEntry>) -> PathBuf {
+        let path = self.root.join(name);
+        let file = fs::File::create(&path).unwrap();
+        let mut writer = ZipWriter::new(file);
+        let options =
+            SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+        for entry in entries {
+            match entry {
+                TestZipEntry::File(name, contents) => {
+                    writer.start_file(name, options).unwrap();
+                    writer.write_all(&contents).unwrap();
+                }
+                TestZipEntry::Symlink(name, target) => {
+                    writer.add_symlink(name, target, options).unwrap();
+                }
+                TestZipEntry::Directory(name) => {
+                    writer.add_directory(name, options).unwrap();
+                }
+            }
+        }
+        writer.finish().unwrap();
+        path
+    }
+
+    fn assert_zip_rejected(&self, package: &PathBuf, expected: SkinImportErrorKind) {
+        let error =
+            import_zip_skin(package, &self.data_directory, &self.repository).unwrap_err();
+        assert_eq!(error.kind(), Some(expected), "{error}");
+        self.assert_skin_directory_is_empty();
+        assert_eq!(self.repository.list_skins().unwrap().len(), 3);
     }
 
     fn assert_skin_directory_is_empty(&self) {

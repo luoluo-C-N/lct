@@ -1,4 +1,4 @@
-use crate::domain::companion::{CompanionSkin, MotionSettings, VisualPreset};
+use crate::domain::companion::{CompanionSkin, MotionSettings, SkinSource, VisualPreset};
 
 #[test]
 fn serializes_companion_skin_for_the_frontend() {
@@ -9,6 +9,15 @@ fn serializes_companion_skin_for_the_frontend() {
         serde_json::to_value(CompanionSkin::builtin(VisualPreset::QuietAurora)).unwrap()
             ["visualPreset"],
         "quiet_aurora"
+    );
+}
+
+#[test]
+fn serializes_distinct_image_and_package_skin_sources() {
+    assert_eq!(serde_json::to_value(SkinSource::Image).unwrap(), "image");
+    assert_eq!(
+        serde_json::to_value(SkinSource::Package).unwrap(),
+        "package"
     );
 }
 

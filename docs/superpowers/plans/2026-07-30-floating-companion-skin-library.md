@@ -1,5 +1,7 @@
 # Floating Companion Skin Library Implementation Plan
 
+> **Pause checkpoint (2026-07-31):** Task 1 and Task 2 are complete and committed through `5d59ce0`. Task 3 has its exact `zip = 8.6.0` dependency added and locked, plus an unfinished RED test draft in the companion domain/repository and skin service tests. The draft currently does not compile because its fixture helpers and production contracts are not implemented. Resume inside Task 3 Step 1; do not treat the dependency or draft tests as a completed step.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Deliver a real always-on-top Tauri companion window, three built-in animated skins, and a safe local PNG/WebP/ZIP skin library.
@@ -47,7 +49,7 @@
   - `set_active_skin(&str)`, `save_settings(&CompanionSettings)`
 - Migrates existing SQLite schema from v2 to v3 without rebuilding or losing assets.
 
-- [ ] **Step 1: Write failing domain serialization and clamp tests**
+- [x] **Step 1: Write failing domain serialization and clamp tests**
 
 ```rust
 #[test]
@@ -65,7 +67,7 @@ fn clamps_motion_settings_to_safe_ranges() {
 }
 ```
 
-- [ ] **Step 2: Run the domain tests and confirm RED**
+- [x] **Step 2: Run the domain tests and confirm RED**
 
 Run:
 
@@ -75,7 +77,7 @@ cargo test --manifest-path src-tauri/Cargo.toml domain::companion_test -- --noca
 
 Expected: compile failure because `domain::companion` and the types do not exist.
 
-- [ ] **Step 3: Define the domain types and three complete presets**
+- [x] **Step 3: Define the domain types and three complete presets**
 
 ```rust
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -105,7 +107,7 @@ pub struct CompanionSettings {
 
 Define all values for `QuietAurora`, `PorcelainPearl`, and `DeepInk`; do not implement a hue-rotation shortcut.
 
-- [ ] **Step 4: Write failing v2-to-v3 migration and repository tests**
+- [x] **Step 4: Write failing v2-to-v3 migration and repository tests**
 
 ```rust
 #[test]
@@ -126,7 +128,7 @@ fn protects_builtin_and_active_skins() {
 }
 ```
 
-- [ ] **Step 5: Run repository tests and confirm RED**
+- [x] **Step 5: Run repository tests and confirm RED**
 
 Run:
 
@@ -136,7 +138,7 @@ cargo test --manifest-path src-tauri/Cargo.toml repository::companion_test -- --
 
 Expected: compile failure because `CompanionRepository` and schema v3 do not exist.
 
-- [ ] **Step 6: Implement schema v3 and repository transactions**
+- [x] **Step 6: Implement schema v3 and repository transactions**
 
 Create `companion_skins` and `companion_settings` tables. Update `assets::migrate_schema` so v2 adds these tables, writes version `3`, and a v3 database remains accepted. Seed each built-in with `INSERT INTO companion_skins (id, name, source, visual_preset, texture_path, preview_path, flow_colors, flow_speed, flow_intensity, created_at) VALUES (?1, ?2, ?3, ?4, NULL, NULL, ?5, ?6, ?7, ?8) ON CONFLICT(id) DO NOTHING`. Wrap active-skin changes and deletes in transactions.
 
@@ -162,7 +164,7 @@ CREATE TABLE companion_settings (
 );
 ```
 
-- [ ] **Step 7: Run focused and existing migration tests**
+- [x] **Step 7: Run focused and existing migration tests**
 
 ```powershell
 cargo test --manifest-path src-tauri/Cargo.toml repository::companion_test
@@ -171,7 +173,7 @@ cargo test --manifest-path src-tauri/Cargo.toml repository::assets_test
 
 Expected: both suites pass; the existing asset migration remains green.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```powershell
 git add src-tauri/src/domain src-tauri/src/repository
@@ -196,7 +198,7 @@ git commit -m "feat: persist companion skins and settings"
   - `derive_flow_colors(image: &DynamicImage) -> [String; 2]`
 - Normalizes the source into `texture.png` and `preview.png` inside a generated skin directory.
 
-- [ ] **Step 1: Enable WebP decoding and write failing import tests**
+- [x] **Step 1: Enable WebP decoding and write failing import tests**
 
 Update image features:
 
@@ -221,7 +223,7 @@ fn rejects_oversized_or_too_small_images_without_leaving_files() {
 }
 ```
 
-- [ ] **Step 2: Run focused tests and confirm RED**
+- [x] **Step 2: Run focused tests and confirm RED**
 
 ```powershell
 cargo test --manifest-path src-tauri/Cargo.toml services::skins_test -- --nocapture
@@ -229,7 +231,7 @@ cargo test --manifest-path src-tauri/Cargo.toml services::skins_test -- --nocapt
 
 Expected: compile failure because `services::skins` does not exist.
 
-- [ ] **Step 3: Implement guarded normalization**
+- [x] **Step 3: Implement guarded normalization**
 
 The implementation must:
 
@@ -255,11 +257,11 @@ pub fn import_image_skin(
 
 Create the skin in a temporary sibling directory, save a maximum `1024 × 1024` texture and `256 × 256` preview, persist the repository record, then atomically rename the directory. Delete the record and temporary files on any failure.
 
-- [ ] **Step 4: Implement deterministic safe palette extraction**
+- [x] **Step 4: Implement deterministic safe palette extraction**
 
 Resize to `16 × 16`, ignore pixels with alpha below `0.2`, average in linear RGB, clamp saturation and luminance, and generate a lighter companion color. Tests assert stable hex output for purple, near-white, near-black, and transparent fixtures.
 
-- [ ] **Step 5: Run service and repository tests**
+- [x] **Step 5: Run service and repository tests**
 
 ```powershell
 cargo test --manifest-path src-tauri/Cargo.toml services::skins_test
@@ -268,7 +270,7 @@ cargo test --manifest-path src-tauri/Cargo.toml repository::companion_test
 
 Expected: all pass and failed imports leave no directory or database row.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/src/services
