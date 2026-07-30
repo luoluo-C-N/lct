@@ -234,8 +234,81 @@ fn rename_failure_retries_a_transient_rollback_failure_before_returning() {
     storage.assert_empty();
 }
 
+#[test]
+fn permanent_rollback_failure_returns_compensation_context() {
+    let fixture = SkinFixture::new();
+    let mut storage = TestSkinImportStorage::failing(TestFailure::RollbackAlways);
+
+    let error = persist_normalized_skin_with_storage_for_test(
+        solid_image(Rgba([10, 20, 30, 255])),
+        &fixture.root.join("source.png"),
+        &fixture.data_directory,
+        &mut storage,
+    )
+    .unwrap_err();
+
+    assert_compensation(
+        error,
+        "injected rename failure",
+        "injected rollback failure",
+    );
+}
+
+#[test]
+fn temporary_directory_cleanup_failure_returns_compensation_context() {
+    let fixture = SkinFixture::new();
+    let mut storage = TestSkinImportStorage::failing(TestFailure::TemporaryCleanup);
+
+    let error = persist_normalized_skin_with_storage_for_test(
+        solid_image(Rgba([10, 20, 30, 255])),
+        &fixture.root.join("source.png"),
+        &fixture.data_directory,
+        &mut storage,
+    )
+    .unwrap_err();
+
+    assert_compensation(
+        error,
+        "injected rename failure",
+        "injected temporary cleanup failure",
+    );
+}
+
+#[test]
+fn final_directory_cleanup_failure_returns_compensation_context() {
+    let fixture = SkinFixture::new();
+    let mut storage = TestSkinImportStorage::failing(TestFailure::FinalCleanup);
+
+    let error = persist_normalized_skin_with_storage_for_test(
+        solid_image(Rgba([10, 20, 30, 255])),
+        &fixture.root.join("source.png"),
+        &fixture.data_directory,
+        &mut storage,
+    )
+    .unwrap_err();
+
+    assert_compensation(
+        error,
+        "injected rename failure",
+        "injected final cleanup failure",
+    );
+}
+
 fn solid_image(color: Rgba<u8>) -> DynamicImage {
     DynamicImage::ImageRgba8(RgbaImage::from_pixel(32, 32, color))
+}
+
+fn assert_compensation(error: SkinImportError, operation: &str, cleanup: &str) {
+    match error {
+        SkinImportError::Compensation {
+            operation: actual_operation,
+            cleanup: actual_cleanup,
+        } => {
+            assert!(actual_operation.contains(operation));
+            assert!(actual_cleanup.contains(cleanup));
+        }
+        unexpected => panic!("expected compensation error, got {unexpected}"),
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -244,6 +317,9 @@ enum TestFailure {
     Create,
     Rename,
     RollbackOnce,
+    RollbackAlways,
+    TemporaryCleanup,
+    FinalCleanup,
 }
 
 struct TestSkinImportStorage {
@@ -299,6 +375,9 @@ impl SkinImportStorage for TestSkinImportStorage {
     }
 
     fn rollback_skin(&mut self, skin_id: &str) -> Result<(), SkinImportError> {
+        if matches!(self.failure, TestFailure::RollbackAlways) {
+            return Err(std::io::Error::other("injected rollback failure").into());
+        }
         if matches!(self.failure, TestFailure::RollbackOnce) && !self.rollback_has_failed {
             self.rollback_has_failed = true;
             return Err(std::io::Error::other("injected rollback failure").into());
@@ -314,7 +393,11 @@ impl SkinImportStorage for TestSkinImportStorage {
     ) -> Result<(), SkinImportError> {
         if matches!(
             self.failure,
-            TestFailure::Rename | TestFailure::RollbackOnce
+            TestFailure::Rename
+                | TestFailure::RollbackOnce
+                | TestFailure::RollbackAlways
+                | TestFailure::TemporaryCleanup
+                | TestFailure::FinalCleanup
         ) {
             return Err(std::io::Error::other("injected rename failure").into());
         }
@@ -324,6 +407,16 @@ impl SkinImportStorage for TestSkinImportStorage {
     }
 
     fn remove_directory(&mut self, path: &std::path::Path) -> Result<(), SkinImportError> {
+        let is_temporary_directory = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with('.'));
+        if matches!(self.failure, TestFailure::TemporaryCleanup) && is_temporary_directory {
+            return Err(std::io::Error::other("injected temporary cleanup failure").into());
+        }
+        if matches!(self.failure, TestFailure::FinalCleanup) && !is_temporary_directory {
+            return Err(std::io::Error::other("injected final cleanup failure").into());
+        }
         self.temporary_directories
             .retain(|entry| !entry.starts_with(path));
         self.final_directories
