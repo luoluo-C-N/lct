@@ -13,6 +13,8 @@ pub struct CompanionRepository {
     connection: Mutex<Connection>,
 }
 
+const BUILTIN_SKIN_IDS: [&str; 3] = ["quiet-aurora", "porcelain-pearl", "deep-ink"];
+
 #[derive(Debug, Error)]
 pub enum CompanionRepositoryError {
     #[error(transparent)]
@@ -23,7 +25,7 @@ pub enum CompanionRepositoryError {
     Json(#[from] serde_json::Error),
     #[error("skin not found: {0}")]
     SkinNotFound(String),
-    #[error("built-in skins cannot be deleted")]
+    #[error("built-in skins are immutable")]
     BuiltinSkin,
     #[error("the active skin cannot be deleted")]
     ActiveSkin,
@@ -116,6 +118,9 @@ impl CompanionRepository {
     }
 
     pub fn create_skin(&self, skin: &CompanionSkin) -> Result<(), CompanionRepositoryError> {
+        if skin.source == SkinSource::Builtin || is_builtin_skin_id(&skin.id) {
+            return Err(CompanionRepositoryError::BuiltinSkin);
+        }
         let connection = self
             .connection
             .lock()
@@ -124,12 +129,15 @@ impl CompanionRepository {
     }
 
     pub fn update_skin(&self, skin: &CompanionSkin) -> Result<(), CompanionRepositoryError> {
+        if skin.source == SkinSource::Builtin || is_builtin_skin_id(&skin.id) {
+            return Err(CompanionRepositoryError::BuiltinSkin);
+        }
         let connection = self
             .connection
             .lock()
             .expect("companion repository lock poisoned");
         let values = SkinDatabaseValues::from_skin(skin)?;
-        connection.execute(
+        let updated = connection.execute(
             "UPDATE companion_skins SET
                 name = ?2, source = ?3, visual_preset = ?4, texture_path = ?5, preview_path = ?6,
                 flow_colors = ?7, flow_speed = ?8, flow_intensity = ?9, created_at = ?10
@@ -147,6 +155,9 @@ impl CompanionRepository {
                 values.created_at,
             ],
         )?;
+        if updated == 0 {
+            return Err(CompanionRepositoryError::SkinNotFound(skin.id.clone()));
+        }
         Ok(())
     }
 
@@ -164,7 +175,7 @@ impl CompanionRepository {
             )
             .optional()?
             .ok_or_else(|| CompanionRepositoryError::SkinNotFound(skin_id.to_owned()))?;
-        if SkinSource::parse(&source) == Some(SkinSource::Builtin) {
+        if is_builtin_skin_id(skin_id) || SkinSource::parse(&source) == Some(SkinSource::Builtin) {
             return Err(CompanionRepositoryError::BuiltinSkin);
         }
         let active_skin_id: String = transaction.query_row(
@@ -229,6 +240,10 @@ impl CompanionRepository {
         transaction.commit()?;
         Ok(())
     }
+}
+
+fn is_builtin_skin_id(skin_id: &str) -> bool {
+    BUILTIN_SKIN_IDS.contains(&skin_id)
 }
 
 fn insert_skin(

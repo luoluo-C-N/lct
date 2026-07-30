@@ -107,6 +107,64 @@ fn protects_builtin_and_active_skins() {
 }
 
 #[test]
+fn rejects_external_builtin_skins_and_reserved_skin_mutations() {
+    let repository = in_memory_repository();
+    let mut forged_builtin = imported_skin();
+    forged_builtin.id = "forged-builtin".to_owned();
+    forged_builtin.source = SkinSource::Builtin;
+
+    assert!(matches!(
+        repository.create_skin(&forged_builtin),
+        Err(CompanionRepositoryError::BuiltinSkin)
+    ));
+    assert!(!repository
+        .list_skins()
+        .unwrap()
+        .iter()
+        .any(|skin| skin.id == "forged-builtin"));
+
+    let mut forged_reserved_id = imported_skin();
+    forged_reserved_id.id = "deep-ink".to_owned();
+    assert!(matches!(
+        repository.create_skin(&forged_reserved_id),
+        Err(CompanionRepositoryError::BuiltinSkin)
+    ));
+
+    let mut porcelain = CompanionSkin::builtin(VisualPreset::PorcelainPearl);
+    porcelain.source = SkinSource::Imported;
+    porcelain.flow_colors = vec!["#000000".to_owned()];
+
+    assert!(matches!(
+        repository.update_skin(&porcelain),
+        Err(CompanionRepositoryError::BuiltinSkin)
+    ));
+    assert!(matches!(
+        repository.delete_skin("porcelain-pearl"),
+        Err(CompanionRepositoryError::BuiltinSkin)
+    ));
+    let stored_porcelain = repository
+        .list_skins()
+        .unwrap()
+        .into_iter()
+        .find(|skin| skin.id == "porcelain-pearl")
+        .unwrap();
+    assert_eq!(stored_porcelain.source, SkinSource::Builtin);
+    assert_eq!(stored_porcelain.flow_colors, vec!["#E3BD7E", "#FFF8EA"]);
+}
+
+#[test]
+fn rejects_updates_for_unknown_skins() {
+    let repository = in_memory_repository();
+    let mut missing = imported_skin();
+    missing.id = "missing-skin".to_owned();
+
+    assert!(matches!(
+        repository.update_skin(&missing),
+        Err(CompanionRepositoryError::SkinNotFound(id)) if id == "missing-skin"
+    ));
+}
+
+#[test]
 fn persists_skin_changes_and_window_settings() {
     let repository = in_memory_repository();
     let mut skin = imported_skin();
