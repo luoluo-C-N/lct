@@ -12,8 +12,8 @@ use crate::{
     repository::assets::AssetRepository,
     services::capture::{
         crop_image, encode_png_data_url, normalize_window_region, persist_captured_pixels,
-        resolve_capture_target, validate_region, CaptureError, CaptureMode, CaptureTarget,
-        CropRegion, WindowLocator,
+        persist_captured_pixels_with, resolve_capture_target, validate_region, CaptureError,
+        CaptureMode, CaptureTarget, CropRegion, WindowLocator,
     },
 };
 
@@ -173,6 +173,31 @@ fn persists_in_memory_pixels_as_a_region_capture_asset() {
     assert_eq!(persisted.get_pixel(0, 0), &image::Rgba([90, 80, 70, 255]));
     assert_eq!(asset.capture_mode, Some(CaptureMode::Region));
 
+    fs::remove_dir_all(temporary_directory).unwrap();
+}
+
+#[test]
+fn removes_a_partial_temporary_capture_when_png_save_fails() {
+    let temporary_directory = temporary_directory();
+    let data_directory = temporary_directory.join("app-data");
+    let repository =
+        AssetRepository::from_connection(Connection::open_in_memory().unwrap()).unwrap();
+    let image = image::RgbaImage::from_pixel(1, 1, image::Rgba([1, 2, 3, 255]));
+
+    let result = persist_captured_pixels_with(
+        image,
+        CaptureMode::Region,
+        &data_directory,
+        &repository,
+        |_, path| {
+            fs::write(path, b"partial PNG").unwrap();
+            Err(CaptureError::Screenshot("injected save failure".to_owned()))
+        },
+    );
+
+    assert!(result.is_err());
+    let captures_directory = data_directory.join("assets").join("captures");
+    assert_eq!(fs::read_dir(captures_directory).unwrap().count(), 0);
     fs::remove_dir_all(temporary_directory).unwrap();
 }
 

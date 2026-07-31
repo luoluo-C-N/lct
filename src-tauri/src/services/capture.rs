@@ -313,12 +313,30 @@ pub(crate) fn persist_captured_pixels(
     data_directory: &Path,
     repository: &AssetRepository,
 ) -> Result<Asset, CaptureError> {
+    persist_captured_pixels_with(image, mode, data_directory, repository, |image, path| {
+        image
+            .save(path)
+            .map_err(|error| CaptureError::Screenshot(error.to_string()))
+    })
+}
+
+pub(crate) fn persist_captured_pixels_with<F>(
+    image: image::RgbaImage,
+    mode: CaptureMode,
+    data_directory: &Path,
+    repository: &AssetRepository,
+    save_image: F,
+) -> Result<Asset, CaptureError>
+where
+    F: FnOnce(&image::RgbaImage, &Path) -> Result<(), CaptureError>,
+{
     let captures_directory = data_directory.join("assets").join("captures");
     fs::create_dir_all(&captures_directory)?;
     let source_path = captures_directory.join(format!("capture-{}.png", new_asset_id()));
-    image
-        .save(&source_path)
-        .map_err(|error| CaptureError::Screenshot(error.to_string()))?;
+    if let Err(error) = save_image(&image, &source_path) {
+        let _ = fs::remove_file(&source_path);
+        return Err(error);
+    }
     persist_captured_image(&source_path, mode, data_directory, repository)
 }
 
