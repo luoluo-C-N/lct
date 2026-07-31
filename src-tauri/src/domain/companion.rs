@@ -65,21 +65,24 @@ impl CompanionSkin {
 #[serde(rename_all = "snake_case")]
 pub enum SkinSource {
     Builtin,
-    Imported,
+    Image,
+    Package,
 }
 
 impl SkinSource {
     pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::Builtin => "builtin",
-            Self::Imported => "imported",
+            Self::Image => "image",
+            Self::Package => "package",
         }
     }
 
     pub(crate) fn parse(value: &str) -> Option<Self> {
         match value {
             "builtin" => Some(Self::Builtin),
-            "imported" => Some(Self::Imported),
+            "image" | "imported" => Some(Self::Image),
+            "package" => Some(Self::Package),
             _ => None,
         }
     }

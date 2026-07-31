@@ -293,7 +293,7 @@ git commit -m "feat: import local image skins"
   - `import_zip_skin(path: &Path, data_dir: &Path, repository: &CompanionRepository) -> Result<CompanionSkin, SkinImportError>`
 - Uses zip `8.6.0` with only deflate support.
 
-- [ ] **Step 1: Add the exact ZIP dependency and failing happy-path test**
+- [x] **Step 1: Add the exact ZIP dependency and failing happy-path test**
 
 ```toml
 zip = { version = "=8.6.0", default-features = false, features = ["deflate"] }
@@ -312,7 +312,7 @@ fn imports_a_v1_package_after_full_validation() {
 }
 ```
 
-- [ ] **Step 2: Add malicious archive tests before implementation**
+- [x] **Step 2: Add malicious archive tests before implementation**
 
 ```rust
 #[test]
@@ -327,7 +327,7 @@ fn rejects_traversal_symlinks_bombs_and_unreferenced_files() {
 
 Also cover compressed size, entry count, manifest size, unknown version, remote URL, invalid color, invalid speed/intensity, missing texture, and invalid decoded dimensions.
 
-- [ ] **Step 3: Run the ZIP tests and confirm RED**
+- [x] **Step 3: Run the ZIP tests and confirm RED**
 
 ```powershell
 cargo test --manifest-path src-tauri/Cargo.toml services::skins_test::zip -- --nocapture
@@ -335,7 +335,7 @@ cargo test --manifest-path src-tauri/Cargo.toml services::skins_test::zip -- --n
 
 Expected: compile failure because ZIP interfaces are absent.
 
-- [ ] **Step 4: Implement validate-before-extract**
+- [x] **Step 4: Implement validate-before-extract**
 
 Iterate entries with `ZipFile::enclosed_name()`, reject `!is_file()`, inspect `unix_mode()` for symlinks, sum declared and copied bytes, and stream each accepted file through `Read::take(remaining + 1)`. Never call bulk `ZipArchive::extract`.
 
@@ -348,7 +348,7 @@ const MAX_MANIFEST_BYTES: u64 = 64 * 1024;
 
 Parse manifest v1, validate that the exact root entry set is `manifest.json` plus referenced PNG/WebP files, then normalize via the same image pipeline from Task 2. Clamp `flowSpeed` to `0.5..=2.0` and `flowIntensity` to `0.0..=1.0`.
 
-- [ ] **Step 5: Run all skin service tests**
+- [x] **Step 5: Run all skin service tests**
 
 ```powershell
 cargo test --manifest-path src-tauri/Cargo.toml services::skins_test
@@ -356,7 +356,7 @@ cargo test --manifest-path src-tauri/Cargo.toml services::skins_test
 
 Expected: valid packages import; every malicious or malformed package is rejected without residue.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/src/services/skins.rs src-tauri/src/services/skins_test.rs

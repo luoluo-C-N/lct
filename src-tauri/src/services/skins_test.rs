@@ -3,6 +3,7 @@ use std::{
     fs::{self, OpenOptions},
     io::{Cursor, Write},
     path::PathBuf,
+    sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -20,6 +21,8 @@ use crate::{
         SkinImportStorage,
     },
 };
+
+static FIXTURE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[test]
 fn imports_and_center_crops_a_rectangular_webp() {
@@ -47,7 +50,7 @@ fn imports_and_center_crops_a_rectangular_webp() {
         image::open(skin.texture_path.unwrap())
             .unwrap()
             .dimensions(),
-        (1024, 1024)
+        (800, 800)
     );
     assert_eq!(
         image::open(skin.preview_path.unwrap())
@@ -69,8 +72,7 @@ fn zip_imports_a_v1_package_after_full_validation() {
         ],
     );
 
-    let skin =
-        import_zip_skin(&package, &fixture.data_directory, &fixture.repository).unwrap();
+    let skin = import_zip_skin(&package, &fixture.data_directory, &fixture.repository).unwrap();
 
     assert_eq!(skin.name, "Lavender package");
     assert_eq!(skin.source, SkinSource::Package);
@@ -131,7 +133,7 @@ fn zip_rejects_archives_over_the_compressed_size_limit() {
             zip_file("texture.webp", valid_webp_bytes(128, 128)),
         ],
     );
-    let file = OpenOptions::new().append(true).open(&package).unwrap();
+    let file = OpenOptions::new().write(true).open(&package).unwrap();
     file.set_len(20 * 1024 * 1024 + 1).unwrap();
 
     fixture.assert_zip_rejected(&package, SkinImportErrorKind::ArchiveTooLarge);
@@ -227,10 +229,7 @@ fn zip_rejects_invalid_colors_and_motion_fields() {
     invalid_color["flowColors"] = json!(["#B79CFF", "#NOTHEX"]);
     assert_zip_rejected(
         vec![
-            zip_file(
-                "manifest.json",
-                serde_json::to_vec(&invalid_color).unwrap(),
-            ),
+            zip_file("manifest.json", serde_json::to_vec(&invalid_color).unwrap()),
             zip_file("texture.webp", valid_webp_bytes(128, 128)),
         ],
         SkinImportErrorKind::InvalidColor,
@@ -240,10 +239,7 @@ fn zip_rejects_invalid_colors_and_motion_fields() {
     invalid_speed["flowSpeed"] = json!("very fast");
     assert_zip_rejected(
         vec![
-            zip_file(
-                "manifest.json",
-                serde_json::to_vec(&invalid_speed).unwrap(),
-            ),
+            zip_file("manifest.json", serde_json::to_vec(&invalid_speed).unwrap()),
             zip_file("texture.webp", valid_webp_bytes(128, 128)),
         ],
         SkinImportErrorKind::InvalidMotion,
@@ -277,8 +273,7 @@ fn zip_clamps_numeric_motion_fields_to_package_ranges() {
         ],
     );
 
-    let skin =
-        import_zip_skin(&package, &fixture.data_directory, &fixture.repository).unwrap();
+    let skin = import_zip_skin(&package, &fixture.data_directory, &fixture.repository).unwrap();
 
     assert_eq!(skin.flow_speed, 2.0);
     assert_eq!(skin.flow_intensity, 0.0);
@@ -287,10 +282,7 @@ fn zip_clamps_numeric_motion_fields_to_package_ranges() {
 #[test]
 fn zip_rejects_missing_textures_and_invalid_decoded_dimensions() {
     assert_zip_rejected(
-        vec![zip_file(
-            "manifest.json",
-            valid_manifest("texture.webp"),
-        )],
+        vec![zip_file("manifest.json", valid_manifest("texture.webp"))],
         SkinImportErrorKind::MissingTexture,
     );
     assert_zip_rejected(
@@ -734,12 +726,13 @@ struct SkinFixture {
 impl SkinFixture {
     fn new() -> Self {
         let root = std::env::temp_dir().join(format!(
-            "magic-image-library-skins-test-{}-{}",
+            "magic-image-library-skins-test-{}-{}-{}",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
-                .as_nanos()
+                .as_nanos(),
+            FIXTURE_SEQUENCE.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir_all(&root).unwrap();
         Self {
@@ -769,8 +762,7 @@ impl SkinFixture {
         let path = self.root.join(name);
         let file = fs::File::create(&path).unwrap();
         let mut writer = ZipWriter::new(file);
-        let options =
-            SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
         for entry in entries {
             match entry {
                 TestZipEntry::File(name, contents) => {
@@ -790,8 +782,7 @@ impl SkinFixture {
     }
 
     fn assert_zip_rejected(&self, package: &PathBuf, expected: SkinImportErrorKind) {
-        let error =
-            import_zip_skin(package, &self.data_directory, &self.repository).unwrap_err();
+        let error = import_zip_skin(package, &self.data_directory, &self.repository).unwrap_err();
         assert_eq!(error.kind(), Some(expected), "{error}");
         self.assert_skin_directory_is_empty();
         assert_eq!(self.repository.list_skins().unwrap().len(), 3);

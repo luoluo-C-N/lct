@@ -1,6 +1,8 @@
 use std::{
-    fs,
-    path::Path,
+    collections::{BTreeMap, BTreeSet},
+    fs::{self, File},
+    io::{Cursor, Read},
+    path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -10,7 +12,9 @@ use image::{
     imageops::FilterType, DynamicImage, GenericImageView, ImageError, ImageFormat, ImageReader,
     Limits, Rgba,
 };
+use serde::Deserialize;
 use thiserror::Error;
+use zip::ZipArchive;
 
 use crate::{
     domain::companion::{CompanionSkin, SkinSource, VisualPreset},
@@ -18,6 +22,10 @@ use crate::{
 };
 
 const MAX_IMAGE_BYTES: u64 = 10 * 1024 * 1024;
+const MAX_ZIP_BYTES: u64 = 20 * 1024 * 1024;
+const MAX_UNCOMPRESSED_BYTES: u64 = 40 * 1024 * 1024;
+const MAX_ZIP_ENTRIES: usize = 16;
+const MAX_MANIFEST_BYTES: u64 = 64 * 1024;
 const MIN_DIMENSION: u32 = 128;
 const MAX_DIMENSION: u32 = 4096;
 const MAX_TEXTURE_DIMENSION: u32 = 1024;
@@ -35,6 +43,8 @@ pub enum SkinImportError {
     Image(#[from] ImageError),
     #[error(transparent)]
     Repository(#[from] CompanionRepositoryError),
+    #[error(transparent)]
+    Zip(#[from] zip::result::ZipError),
     #[error("unsupported skin image format: {0}")]
     UnsupportedFormat(String),
     #[error("source image is too large: {bytes} bytes (maximum {maximum} bytes)")]
@@ -48,6 +58,101 @@ pub enum SkinImportError {
     },
     #[error("skin import failed ({operation}) and compensation failed: {cleanup}")]
     Compensation { operation: String, cleanup: String },
+    #[error("invalid skin package: {0:?}")]
+    Package(SkinImportErrorKind),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SkinImportErrorKind {
+    UnsafePath,
+    Symlink,
+    ArchiveTooLarge,
+    TooManyEntries,
+    ManifestTooLarge,
+    UnsupportedEntry,
+    UnreferencedEntry,
+    UnsupportedVersion,
+    RemoteUrl,
+    InvalidColor,
+    InvalidMotion,
+    MissingTexture,
+    InvalidDimensions,
+    InvalidManifest,
+}
+
+impl SkinImportError {
+    pub fn kind(&self) -> Option<SkinImportErrorKind> {
+        match self {
+            Self::Package(kind) => Some(*kind),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkinPackageManifest {
+    version: u32,
+    name: String,
+    texture: String,
+    flow_colors: Vec<String>,
+    flow_speed: serde_json::Value,
+    flow_intensity: serde_json::Value,
+}
+
+pub fn import_zip_skin(
+    path: &Path,
+    data_dir: &Path,
+    repository: &CompanionRepository,
+) -> Result<CompanionSkin, SkinImportError> {
+    validate_source_size(path, MAX_ZIP_BYTES).map_err(|error| match error {
+        SkinImportError::SourceSize { .. } => package_error(SkinImportErrorKind::ArchiveTooLarge),
+        other => other,
+    })?;
+
+    let entries = read_validated_zip_entries(path)?;
+    let manifest_bytes = entries
+        .get(Path::new("manifest.json"))
+        .ok_or_else(|| package_error(SkinImportErrorKind::InvalidManifest))?;
+    let manifest: SkinPackageManifest = serde_json::from_slice(manifest_bytes)
+        .map_err(|_| package_error(SkinImportErrorKind::InvalidManifest))?;
+    validate_package_manifest(&manifest, &entries)?;
+
+    let texture_path = PathBuf::from(&manifest.texture);
+    let texture_bytes = entries
+        .get(&texture_path)
+        .ok_or_else(|| package_error(SkinImportErrorKind::MissingTexture))?;
+    let decoded = decode_package_image(texture_bytes)?;
+    validate_dimensions(decoded.dimensions())
+        .map_err(|_| package_error(SkinImportErrorKind::InvalidDimensions))?;
+    let square = center_crop_square(decoded);
+    let flow_speed = manifest
+        .flow_speed
+        .as_f64()
+        .ok_or_else(|| package_error(SkinImportErrorKind::InvalidMotion))?
+        .clamp(0.5, 2.0) as f32;
+    let flow_intensity = manifest
+        .flow_intensity
+        .as_f64()
+        .ok_or_else(|| package_error(SkinImportErrorKind::InvalidMotion))?
+        .clamp(0.0, 1.0) as f32;
+
+    fs::create_dir_all(data_dir.join("skins"))?;
+    let mut storage = FilesystemSkinImportStorage { repository };
+    persist_normalized_skin_with_storage(
+        square,
+        [
+            manifest.flow_colors[0].clone(),
+            manifest.flow_colors[1].clone(),
+        ],
+        path,
+        Some(&manifest.name),
+        SkinSource::Package,
+        flow_speed,
+        flow_intensity,
+        data_dir,
+        &mut storage,
+    )
 }
 
 pub fn import_image_skin(
@@ -64,7 +169,146 @@ pub fn import_image_skin(
     let colors = derive_flow_colors(&square);
     fs::create_dir_all(data_dir.join("skins"))?;
     let mut storage = FilesystemSkinImportStorage { repository };
-    persist_normalized_skin_with_storage(square, colors, path, name, data_dir, &mut storage)
+    persist_normalized_skin_with_storage(
+        square,
+        colors,
+        path,
+        name,
+        SkinSource::Image,
+        1.0,
+        0.7,
+        data_dir,
+        &mut storage,
+    )
+}
+
+fn read_validated_zip_entries(path: &Path) -> Result<BTreeMap<PathBuf, Vec<u8>>, SkinImportError> {
+    let mut archive = ZipArchive::new(File::open(path)?)?;
+    if archive.len() > MAX_ZIP_ENTRIES {
+        return Err(package_error(SkinImportErrorKind::TooManyEntries));
+    }
+
+    let mut entries = BTreeMap::new();
+    let mut total_uncompressed = 0_u64;
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index)?;
+        let name = entry
+            .enclosed_name()
+            .ok_or_else(|| package_error(SkinImportErrorKind::UnsafePath))?;
+        if entry.is_symlink() {
+            return Err(package_error(SkinImportErrorKind::Symlink));
+        }
+        if !entry.is_file() {
+            return Err(package_error(SkinImportErrorKind::UnsupportedEntry));
+        }
+        if name.components().count() != 1 {
+            return Err(package_error(SkinImportErrorKind::UnsupportedEntry));
+        }
+        if !is_supported_package_entry(&name) {
+            return Err(package_error(SkinImportErrorKind::UnsupportedEntry));
+        }
+        if entries.contains_key(&name) {
+            return Err(package_error(SkinImportErrorKind::UnsupportedEntry));
+        }
+        if name == Path::new("manifest.json") && entry.size() > MAX_MANIFEST_BYTES {
+            return Err(package_error(SkinImportErrorKind::ManifestTooLarge));
+        }
+
+        total_uncompressed = total_uncompressed
+            .checked_add(entry.size())
+            .ok_or_else(|| package_error(SkinImportErrorKind::ArchiveTooLarge))?;
+        if total_uncompressed > MAX_UNCOMPRESSED_BYTES {
+            return Err(package_error(SkinImportErrorKind::ArchiveTooLarge));
+        }
+
+        let remaining = MAX_UNCOMPRESSED_BYTES - (total_uncompressed - entry.size());
+        let mut contents = Vec::new();
+        entry
+            .by_ref()
+            .take(remaining + 1)
+            .read_to_end(&mut contents)?;
+        if contents.len() as u64 > remaining {
+            return Err(package_error(SkinImportErrorKind::ArchiveTooLarge));
+        }
+        if name == Path::new("manifest.json") && contents.len() as u64 > MAX_MANIFEST_BYTES {
+            return Err(package_error(SkinImportErrorKind::ManifestTooLarge));
+        }
+        entries.insert(name, contents);
+    }
+    Ok(entries)
+}
+
+fn is_supported_package_entry(path: &Path) -> bool {
+    if path == Path::new("manifest.json") {
+        return true;
+    }
+    matches!(
+        path.extension().and_then(|extension| extension.to_str()),
+        Some(extension) if extension.eq_ignore_ascii_case("png") || extension.eq_ignore_ascii_case("webp")
+    )
+}
+
+fn validate_package_manifest(
+    manifest: &SkinPackageManifest,
+    entries: &BTreeMap<PathBuf, Vec<u8>>,
+) -> Result<(), SkinImportError> {
+    if manifest.version != 1 {
+        return Err(package_error(SkinImportErrorKind::UnsupportedVersion));
+    }
+    if manifest.texture.contains("://") {
+        return Err(package_error(SkinImportErrorKind::RemoteUrl));
+    }
+    let texture = PathBuf::from(&manifest.texture);
+    if texture.is_absolute()
+        || texture.components().count() != 1
+        || !is_supported_package_entry(&texture)
+        || texture == Path::new("manifest.json")
+    {
+        return Err(package_error(SkinImportErrorKind::UnsafePath));
+    }
+    if !entries.contains_key(&texture) {
+        return Err(package_error(SkinImportErrorKind::MissingTexture));
+    }
+    let referenced = BTreeSet::from([PathBuf::from("manifest.json"), texture]);
+    if entries.keys().any(|entry| !referenced.contains(entry)) {
+        return Err(package_error(SkinImportErrorKind::UnreferencedEntry));
+    }
+    if manifest.flow_colors.len() != 2
+        || manifest
+            .flow_colors
+            .iter()
+            .any(|color| !is_valid_hex_color(color))
+    {
+        return Err(package_error(SkinImportErrorKind::InvalidColor));
+    }
+    if manifest.flow_speed.as_f64().is_none() || manifest.flow_intensity.as_f64().is_none() {
+        return Err(package_error(SkinImportErrorKind::InvalidMotion));
+    }
+    Ok(())
+}
+
+fn is_valid_hex_color(value: &str) -> bool {
+    value.len() == 7
+        && value.starts_with('#')
+        && value.as_bytes()[1..].iter().all(u8::is_ascii_hexdigit)
+}
+
+fn decode_package_image(bytes: &[u8]) -> Result<DynamicImage, SkinImportError> {
+    let mut reader = ImageReader::new(Cursor::new(bytes)).with_guessed_format()?;
+    match reader.format() {
+        Some(ImageFormat::Png | ImageFormat::WebP) => {}
+        _ => return Err(package_error(SkinImportErrorKind::UnsupportedEntry)),
+    }
+    let mut limits = Limits::default();
+    limits.max_image_width = Some(MAX_DIMENSION);
+    limits.max_image_height = Some(MAX_DIMENSION);
+    limits.max_alloc = Some(MAX_DECODE_ALLOCATION);
+    reader.limits(limits);
+    Ok(reader.decode()?)
+}
+
+fn package_error(kind: SkinImportErrorKind) -> SkinImportError {
+    SkinImportError::Package(kind)
 }
 
 pub fn derive_flow_colors(image: &DynamicImage) -> [String; 2] {
@@ -154,6 +398,9 @@ fn persist_normalized_skin_with_storage(
     colors: [String; 2],
     source_path: &Path,
     name: Option<&str>,
+    source: SkinSource,
+    flow_speed: f32,
+    flow_intensity: f32,
     data_dir: &Path,
     storage: &mut impl SkinImportStorage,
 ) -> Result<CompanionSkin, SkinImportError> {
@@ -165,16 +412,8 @@ fn persist_normalized_skin_with_storage(
 
     let texture_path = temporary_directory.join("texture.png");
     let preview_path = temporary_directory.join("preview.png");
-    let texture = square.resize(
-        MAX_TEXTURE_DIMENSION,
-        MAX_TEXTURE_DIMENSION,
-        FilterType::Lanczos3,
-    );
-    let preview = square.resize(
-        MAX_PREVIEW_DIMENSION,
-        MAX_PREVIEW_DIMENSION,
-        FilterType::Lanczos3,
-    );
+    let texture = resize_down_to_limit(&square, MAX_TEXTURE_DIMENSION);
+    let preview = resize_down_to_limit(&square, MAX_PREVIEW_DIMENSION);
 
     if let Err(error) = storage
         .save_png(&texture, &texture_path)
@@ -195,13 +434,13 @@ fn persist_normalized_skin_with_storage(
             .filter(|value| !value.trim().is_empty())
             .map(str::to_owned)
             .unwrap_or_else(|| default_skin_name(source_path)),
-        source: SkinSource::Imported,
+        source,
         visual_preset: VisualPreset::DeepInk,
         texture_path: Some(final_directory.join("texture.png")),
         preview_path: Some(final_directory.join("preview.png")),
         flow_colors: colors.into(),
-        flow_speed: 1.0,
-        flow_intensity: 0.7,
+        flow_speed,
+        flow_intensity,
         created_at: Utc::now(),
     };
 
@@ -228,6 +467,14 @@ fn persist_normalized_skin_with_storage(
     Ok(skin)
 }
 
+fn resize_down_to_limit(image: &DynamicImage, maximum: u32) -> DynamicImage {
+    if image.width() <= maximum && image.height() <= maximum {
+        image.clone()
+    } else {
+        image.resize(maximum, maximum, FilterType::Lanczos3)
+    }
+}
+
 #[cfg(test)]
 pub(crate) fn persist_normalized_skin_with_storage_for_test(
     square: DynamicImage,
@@ -236,7 +483,17 @@ pub(crate) fn persist_normalized_skin_with_storage_for_test(
     storage: &mut impl SkinImportStorage,
 ) -> Result<CompanionSkin, SkinImportError> {
     let colors = derive_flow_colors(&square);
-    persist_normalized_skin_with_storage(square, colors, source_path, None, data_dir, storage)
+    persist_normalized_skin_with_storage(
+        square,
+        colors,
+        source_path,
+        None,
+        SkinSource::Image,
+        1.0,
+        0.7,
+        data_dir,
+        storage,
+    )
 }
 
 pub(crate) trait SkinImportStorage {

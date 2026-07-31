@@ -210,7 +210,7 @@ impl CompanionRepository {
             params![skin_id],
         )?;
         transaction.execute(
-            "DELETE FROM companion_skins WHERE id = ?1 AND source = 'imported'",
+            "DELETE FROM companion_skins WHERE id = ?1 AND source IN ('image', 'package', 'imported')",
             params![skin_id],
         )?;
         transaction.commit()?;
