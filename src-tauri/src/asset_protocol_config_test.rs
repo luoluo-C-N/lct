@@ -16,6 +16,26 @@ use crate::{
 };
 
 #[test]
+fn setup_registers_both_repository_states_on_the_app_handle() {
+    let app = tauri::test::mock_builder()
+        .build(tauri::generate_context!())
+        .unwrap();
+    let asset_repository =
+        AssetRepository::from_connection(Connection::open_in_memory().unwrap()).unwrap();
+    let companion_repository = crate::repository::companion::CompanionRepository::from_connection(
+        Connection::open_in_memory().unwrap(),
+    )
+    .unwrap();
+
+    crate::manage_repository_states(app.handle(), asset_repository, companion_repository).unwrap();
+
+    assert!(app.try_state::<AssetRepository>().is_some());
+    assert!(app
+        .try_state::<crate::repository::companion::CompanionRepository>()
+        .is_some());
+}
+
+#[test]
 fn asset_protocol_only_exposes_the_generated_preview_tree() {
     let config: Config = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
     let asset_protocol = config.app.security.asset_protocol;
