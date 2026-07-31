@@ -13,7 +13,7 @@ use serde_json::json;
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
 
 use crate::{
-    domain::companion::{CompanionSkin, SkinSource},
+    domain::companion::{CompanionSkin, SkinSource, VisualPreset},
     repository::companion::CompanionRepository,
     services::skins::{
         derive_flow_colors, import_image_skin, import_zip_skin,
@@ -45,6 +45,7 @@ fn imports_and_center_crops_a_rectangular_webp() {
 
     assert_eq!(skin.name, "Wide purple");
     assert_eq!(skin.source, SkinSource::Image);
+    assert_eq!(skin.visual_preset, VisualPreset::Custom);
     assert!(skin.texture_path.as_ref().unwrap().ends_with("texture.png"));
     assert_eq!(
         image::open(skin.texture_path.unwrap())
@@ -76,6 +77,7 @@ fn zip_imports_a_v1_package_after_full_validation() {
 
     assert_eq!(skin.name, "Lavender package");
     assert_eq!(skin.source, SkinSource::Package);
+    assert_eq!(skin.visual_preset, VisualPreset::Custom);
     assert_eq!(skin.flow_colors, vec!["#B79CFF", "#FFE4B5"]);
     assert_eq!(skin.flow_speed, 1.25);
     assert_eq!(skin.flow_intensity, 0.8);

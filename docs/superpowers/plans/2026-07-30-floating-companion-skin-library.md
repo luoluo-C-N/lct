@@ -498,7 +498,7 @@ git commit -m "feat: add companion window lifecycle and IPC"
 - Produces typed invoke/listen wrappers matching Task 4.
 - `Root` renders `<App />` for `main` and `<CompanionWindow />` for `companion`.
 
-- [ ] **Step 1: Write failing routing and client contract tests**
+- [x] **Step 1: Write failing routing and client contract tests**
 
 ```tsx
 it('renders only the companion entry for the companion window', () => {
@@ -515,7 +515,7 @@ it('invokes package import for zip and image import for png', async () => {
 });
 ```
 
-- [ ] **Step 2: Run focused Vitest and confirm RED**
+- [x] **Step 2: Run focused Vitest and confirm RED**
 
 ```powershell
 npm test -- Root companion
@@ -523,7 +523,7 @@ npm test -- Root companion
 
 Expected: fail because `Root` and client wrappers do not exist.
 
-- [ ] **Step 3: Implement exact TypeScript contracts**
+- [x] **Step 3: Implement exact TypeScript contracts**
 
 ```ts
 export type VisualPreset =
@@ -548,11 +548,11 @@ export type CompanionSkin = {
 
 Add wrappers and subscriptions. Every subscription returns the Tauri unlisten function and callers handle rejected registration promises.
 
-- [ ] **Step 4: Implement entry routing and remove embedded companion**
+- [x] **Step 4: Implement entry routing and remove embedded companion**
 
 Read `getCurrentWebviewWindow().label` in `main.tsx`, pass it to `Root`, and remove `<CompanionWindow />` from `App`. Preserve dependency injection in `Root` tests so Vitest does not require a real Tauri window.
 
-- [ ] **Step 5: Run focused and existing app tests**
+- [x] **Step 5: Run focused and existing app tests**
 
 ```powershell
 npm test -- Root companion App
@@ -560,7 +560,7 @@ npm test -- Root companion App
 
 Expected: main and companion render exactly once and existing library behavior remains green.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add src/main.tsx src/Root.tsx src/Root.test.tsx src/App.tsx src/App.test.tsx src/lib

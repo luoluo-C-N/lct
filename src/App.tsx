@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { MagicBookView } from './features/library/MagicBookView';
 import { ClassicGallery } from './features/library/ClassicGallery';
-import { CompanionWindow } from './features/floating-companion/CompanionWindow';
 import './app.css';
 
 type AppProps = {
@@ -27,7 +26,6 @@ export default function App({ now = () => new Date() }: AppProps) {
       {view === 'book'
         ? <MagicBookView initialMonth={initialMonth} />
         : <ClassicGallery initialMonth={initialMonth} />}
-      <CompanionWindow />
     </main>
   );
 }

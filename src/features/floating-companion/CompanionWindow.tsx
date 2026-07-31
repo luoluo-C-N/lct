@@ -43,7 +43,7 @@ export function CompanionWindow() {
   }
 
   return (
-    <aside className="companion" aria-label="悬浮角色">
+    <aside className="companion" aria-label="悬浮助手">
       <button type="button" aria-label="悬浮角色" onClick={() => setOpen(!open)}>✦</button>
       {open && <CompanionMenu onCapture={startCapture} onImport={startImport} />}
       {lastAction && <output aria-live="polite">{lastAction}</output>}

@@ -36,6 +36,7 @@ impl CompanionSkin {
                 0.7,
             ),
             VisualPreset::DeepInk => ("deep-ink", "Deep Ink", vec!["#49D9CF", "#D4FFF8"], 1.0, 0.7),
+            VisualPreset::Custom => panic!("custom skins cannot be constructed as built-ins"),
         };
 
         Self {
@@ -94,6 +95,7 @@ pub enum VisualPreset {
     QuietAurora,
     PorcelainPearl,
     DeepInk,
+    Custom,
 }
 
 impl VisualPreset {
@@ -102,6 +104,7 @@ impl VisualPreset {
             Self::QuietAurora => "quiet_aurora",
             Self::PorcelainPearl => "porcelain_pearl",
             Self::DeepInk => "deep_ink",
+            Self::Custom => "custom",
         }
     }
 
@@ -110,6 +113,7 @@ impl VisualPreset {
             "quiet_aurora" => Some(Self::QuietAurora),
             "porcelain_pearl" => Some(Self::PorcelainPearl),
             "deep_ink" => Some(Self::DeepInk),
+            "custom" => Some(Self::Custom),
             _ => None,
         }
     }

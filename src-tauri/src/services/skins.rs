@@ -435,7 +435,7 @@ fn persist_normalized_skin_with_storage(
             .map(str::to_owned)
             .unwrap_or_else(|| default_skin_name(source_path)),
         source,
-        visual_preset: VisualPreset::DeepInk,
+        visual_preset: VisualPreset::Custom,
         texture_path: Some(final_directory.join("texture.png")),
         preview_path: Some(final_directory.join("preview.png")),
         flow_colors: colors.into(),

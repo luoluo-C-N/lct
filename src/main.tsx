@@ -1,9 +1,12 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import App from './App';
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
+import Root from './Root';
+
+const windowLabel = getCurrentWebviewWindow().label;
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <Root windowLabel={windowLabel} />
   </StrictMode>
 );
