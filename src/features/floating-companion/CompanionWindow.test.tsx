@@ -225,6 +225,18 @@ it('leaves the collapsed companion recoverable when frozen completion fails', as
   expect(screen.getByRole('button', { name: '打开悬浮助手菜单' })).toBeVisible();
 });
 
+it('retries native restoration when region setup fails after hiding the companion', async () => {
+  vi.mocked(beginCompanionRegionSelection).mockRejectedValueOnce(new Error('setup failed'));
+  renderCompanion();
+  await openMenu();
+
+  await userEvent.click(screen.getByRole('button', { name: '区域截图' }));
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('截图失败，请重试。');
+  expect(cancelCompanionRegionSelection).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole('button', { name: '打开悬浮助手菜单' })).toBeVisible();
+});
+
 it('keeps the selection session available to retry a failed native restore', async () => {
   vi.mocked(cancelCompanionRegionSelection).mockRejectedValueOnce(new Error('restore failed'));
   renderCompanion();

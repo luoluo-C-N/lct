@@ -36,16 +36,16 @@ struct FakeRegionWindow {
     monitor: WindowBounds,
     primary_scale_factor: f64,
     visible: AtomicBool,
-    fail_operation: Mutex<Option<&'static str>>,
+    fail_operations: Mutex<Vec<&'static str>>,
     operations: Arc<Mutex<Vec<&'static str>>>,
 }
 
 impl FakeRegionWindow {
     fn operation(&self, name: &'static str) -> Result<(), CompanionCommandError> {
         self.operations.lock().unwrap().push(name);
-        let mut failure = self.fail_operation.lock().unwrap();
-        if failure.as_ref() == Some(&name) {
-            *failure = None;
+        let mut failures = self.fail_operations.lock().unwrap();
+        if failures.first() == Some(&name) {
+            failures.remove(0);
             return Err(CompanionCommandError::Window(format!(
                 "injected {name} failure"
             )));
@@ -322,7 +322,11 @@ fn failed_region_selection_setup_restores_the_original_bounds() {
             physical_bounds(0, 0, 1920, 1080),
             operations.clone(),
         );
-        *window.fail_operation.lock().unwrap() = Some(failed_operation);
+        window
+            .fail_operations
+            .lock()
+            .unwrap()
+            .push(failed_operation);
         let capturer = fake_screen_capturer(operations);
         let state = CompanionRegionSelectionState::default();
 
@@ -408,7 +412,7 @@ fn restore_failure_keeps_the_region_session_available_for_cancel_retry() {
     let capturer = fake_screen_capturer(operations);
     let state = CompanionRegionSelectionState::default();
     begin_region_selection_with(&window, &state, &capturer).unwrap();
-    *window.fail_operation.lock().unwrap() = Some("set_bounds");
+    window.fail_operations.lock().unwrap().push("set_bounds");
     let temporary_directory = temporary_region_directory("restore-retry");
     let repository =
         AssetRepository::from_connection(Connection::open_in_memory().unwrap()).unwrap();
@@ -431,6 +435,26 @@ fn restore_failure_keeps_the_region_session_available_for_cancel_retry() {
     cancel_region_selection_with(&window, &state).unwrap();
     assert_eq!(window.bounds().unwrap(), original);
     fs::remove_dir_all(temporary_directory).unwrap();
+}
+
+#[test]
+fn failed_region_setup_and_rollback_retains_recovery_for_cancel_retry() {
+    let original = physical_bounds(120, 80, 72, 72);
+    let operations = Arc::new(Mutex::new(Vec::new()));
+    let window = fake_region_window(original, physical_bounds(0, 0, 4, 4), operations.clone());
+    window
+        .fail_operations
+        .lock()
+        .unwrap()
+        .extend(["set_bounds", "set_bounds"]);
+    let capturer = fake_screen_capturer(operations);
+    let state = CompanionRegionSelectionState::default();
+
+    assert!(begin_region_selection_with(&window, &state, &capturer).is_err());
+
+    cancel_region_selection_with(&window, &state).unwrap();
+    assert_eq!(window.bounds().unwrap(), original);
+    assert!(window.visible.load(Ordering::SeqCst));
 }
 
 #[test]
@@ -673,7 +697,7 @@ fn fake_region_window(
         monitor,
         primary_scale_factor: 1.0,
         visible: AtomicBool::new(true),
-        fail_operation: Mutex::new(None),
+        fail_operations: Mutex::new(Vec::new()),
         operations,
     }
 }

@@ -227,6 +227,13 @@ export function CompanionWindow({
       setStatus('success');
       setLastAction(`${mode} 截图已保存`);
     } catch {
+      if (mode === 'region') {
+        try {
+          await cancelCompanionRegionSelection();
+        } catch {
+          // A setup failure with successful native rollback has no active session.
+        }
+      }
       setStatus('error');
       setLastAction('');
       setError('截图失败，请重试。');

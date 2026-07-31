@@ -49,7 +49,7 @@ pub struct CompanionRegionSelectionState {
 
 struct RegionCaptureSession {
     original_bounds: WindowBounds,
-    image: image::RgbaImage,
+    image: Option<image::RgbaImage>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -439,8 +439,12 @@ pub(crate) fn begin_region_selection_with(
     }
     let original = window.bounds()?;
     let monitor = window.primary_monitor()?;
-    window.hide()?;
+    *active = Some(RegionCaptureSession {
+        original_bounds: original,
+        image: None,
+    });
     let setup = (|| {
+        window.hide()?;
         let image = capturer
             .capture_primary()
             .map_err(|error| CompanionCommandError::Capture(error.to_string()))?;
@@ -454,18 +458,21 @@ pub(crate) fn begin_region_selection_with(
     let (image, preview_data_url) = match setup {
         Ok(result) => result,
         Err(error) => {
-            restore_region_window(window, original).map_err(|rollback_error| {
-                CompanionCommandError::Window(format!(
+            return match restore_region_window(window, original) {
+                Ok(()) => {
+                    *active = None;
+                    Err(error)
+                }
+                Err(rollback_error) => Err(CompanionCommandError::Window(format!(
                     "{error}; restoring companion window failed: {rollback_error}"
-                ))
-            })?;
-            return Err(error);
+                ))),
+            };
         }
     };
-    *active = Some(RegionCaptureSession {
-        original_bounds: original,
-        image,
-    });
+    active
+        .as_mut()
+        .expect("region recovery session stored above")
+        .image = Some(image);
     Ok(RegionSelectionSession {
         scale_factor: monitor.scale_factor,
         preview_data_url,
@@ -512,10 +519,24 @@ where
                 CompanionCommandError::Window("region selection is not active".to_owned())
             })?;
         restore_region_window(window, original)?;
+        let ready = active
+            .as_ref()
+            .and_then(|session| session.image.as_ref())
+            .is_some();
+        if !ready {
+            return Err(CompanionCommandError::Capture(
+                "region selection setup did not complete".to_owned(),
+            ));
+        }
         active.take().expect("active region session checked above")
     };
-    let cropped = capture::crop_image(session.image, region)
-        .map_err(|error| CompanionCommandError::Capture(error.to_string()))?;
+    let cropped = capture::crop_image(
+        session
+            .image
+            .expect("completed region session image checked above"),
+        region,
+    )
+    .map_err(|error| CompanionCommandError::Capture(error.to_string()))?;
     let asset = capture::persist_captured_pixels(
         cropped,
         capture::CaptureMode::Region,
