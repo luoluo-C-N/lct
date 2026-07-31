@@ -132,6 +132,26 @@ it('offers safe controls only for local skins and saves edited values', async ()
   }));
 });
 
+it('preserves an unsaved name when an equivalent skin event refreshes object identities', async () => {
+  let publishSkinState: (state: CompanionSkinState) => void = () => undefined;
+  vi.mocked(listCompanionSkins).mockResolvedValue([...builtins, custom]);
+  vi.mocked(subscribeToCompanionSkinChanged).mockImplementation(async (onChanged) => {
+    publishSkinState = onChanged;
+    return vi.fn();
+  });
+  render(<SkinLibrary />);
+
+  const nameInput = await screen.findByRole('textbox', { name: '皮肤名称' });
+  await userEvent.clear(nameInput);
+  await userEvent.type(nameInput, '星潮');
+  act(() => publishSkinState({
+    activeSkinId: 'quiet-aurora',
+    skins: [...builtins.map((skin) => ({ ...skin })), { ...custom }],
+  }));
+
+  expect(nameInput).toHaveValue('星潮');
+});
+
 it('switches to the fallback before deleting the active local skin', async () => {
   vi.mocked(listCompanionSkins).mockResolvedValue([...builtins, custom]);
   vi.mocked(getCompanionSettings).mockResolvedValue({

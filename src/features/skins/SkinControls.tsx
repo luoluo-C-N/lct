@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CompanionSkin } from '../../lib/companion';
 
 type SkinControlsProps = {
@@ -13,8 +13,12 @@ export function SkinControls({ skin, disabled, onSave }: SkinControlsProps) {
   const [secondary, setSecondary] = useState(skin.flowColors[1] ?? '#55D8CF');
   const [speed, setSpeed] = useState(skin.flowSpeed);
   const [intensity, setIntensity] = useState(skin.flowIntensity);
+  const persistedRevision = useRef(formRevision(skin));
 
   useEffect(() => {
+    const nextRevision = formRevision(skin);
+    if (nextRevision === persistedRevision.current) return;
+    persistedRevision.current = nextRevision;
     setName(skin.name);
     setPrimary(skin.flowColors[0] ?? '#BDA7FF');
     setSecondary(skin.flowColors[1] ?? '#55D8CF');
@@ -96,4 +100,14 @@ export function SkinControls({ skin, disabled, onSave }: SkinControlsProps) {
       </button>
     </div>
   );
+}
+
+function formRevision(skin: CompanionSkin) {
+  return JSON.stringify([
+    skin.id,
+    skin.name,
+    skin.flowColors,
+    skin.flowSpeed,
+    skin.flowIntensity,
+  ]);
 }
