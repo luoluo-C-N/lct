@@ -67,6 +67,7 @@ fn config_declares_a_safe_companion_window() {
     assert!(companion.skip_taskbar);
     assert!(!companion.resizable);
     assert!(companion.transparent);
+    assert!(!companion.shadow);
     assert!(companion.visible);
 }
 
