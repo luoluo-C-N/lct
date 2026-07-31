@@ -63,9 +63,11 @@ export function CompanionWindow({
   const [horizontalAnchor, setHorizontalAnchor] = useState<'left' | 'right'>('right');
   const [verticalAnchor, setVerticalAnchor] = useState<'top' | 'bottom'>('bottom');
   const [regionSession, setRegionSession] = useState<RegionSelectionSession | null>(null);
+  const [regionPending, setRegionPending] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const dragOriginRef = useRef<{ x: number; y: number } | null>(null);
   const suppressClickRef = useRef(false);
+  const regionPendingRef = useRef(false);
 
   useCompanionPosition(windowApi, undefined, !open);
 
@@ -241,25 +243,33 @@ export function CompanionWindow({
   }
 
   async function completeRegionCapture(region: CropRegion) {
+    if (regionPendingRef.current) return;
+    regionPendingRef.current = true;
+    setRegionPending(true);
     try {
       await completeCompanionRegionSelection(region);
       setRegionSession(null);
       setStatus('success');
       setLastAction('region 截图已保存');
-    } catch {
-      try {
-        await cancelCompanionRegionSelection();
+    } catch (completionError) {
+      if (isWindowRecoveryError(completionError)) {
+        setError('无法恢复悬浮助手窗口，请重试。');
+      } else {
         setRegionSession(null);
         setError('截图失败，请重试。');
-      } catch {
-        setError('无法恢复悬浮助手窗口，请重试。');
       }
       setStatus('error');
       setLastAction('');
+    } finally {
+      regionPendingRef.current = false;
+      setRegionPending(false);
     }
   }
 
   async function cancelRegionCapture() {
+    if (regionPendingRef.current) return;
+    regionPendingRef.current = true;
+    setRegionPending(true);
     setError('');
     try {
       await cancelCompanionRegionSelection();
@@ -268,6 +278,9 @@ export function CompanionWindow({
       setLastAction('已取消区域截图');
     } catch {
       setError('无法恢复悬浮助手窗口，请重试。');
+    } finally {
+      regionPendingRef.current = false;
+      setRegionPending(false);
     }
   }
 
@@ -314,6 +327,7 @@ export function CompanionWindow({
         scaleFactor={regionSession.scaleFactor}
         previewDataUrl={regionSession.previewDataUrl}
         error={error}
+        disabled={regionPending}
         onSelect={(region) => void completeRegionCapture(region)}
         onCancel={() => void cancelRegionCapture()}
       />
@@ -357,4 +371,11 @@ export function CompanionWindow({
       {error && <p role="alert">{error}</p>}
     </aside>
   );
+}
+
+function isWindowRecoveryError(error: unknown) {
+  return typeof error === 'object'
+    && error !== null
+    && 'kind' in error
+    && error.kind === 'window';
 }

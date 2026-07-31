@@ -200,6 +200,28 @@ it('crops the frozen preview without invoking a second live capture', async () =
   expect(capture).not.toHaveBeenCalled();
 });
 
+it('ignores repeated selection and Escape while region completion is pending', async () => {
+  const completion = deferred<never>();
+  vi.mocked(completeCompanionRegionSelection).mockReturnValueOnce(completion.promise);
+  renderCompanion();
+  await openMenu();
+
+  await userEvent.click(screen.getByRole('button', { name: '区域截图' }));
+  const overlay = await screen.findByRole('dialog', { name: '选择截图区域' });
+  fireEvent(overlay, pointerEvent('pointerdown', { button: 0, clientX: 10, clientY: 15 }));
+  fireEvent(overlay, pointerEvent('pointerup', { button: 0, clientX: 50, clientY: 55 }));
+  await waitFor(() => expect(completeCompanionRegionSelection).toHaveBeenCalledTimes(1));
+
+  fireEvent(overlay, pointerEvent('pointerdown', { button: 0, clientX: 20, clientY: 25 }));
+  fireEvent(overlay, pointerEvent('pointerup', { button: 0, clientX: 60, clientY: 65 }));
+  await userEvent.keyboard('{Escape}');
+
+  expect(completeCompanionRegionSelection).toHaveBeenCalledTimes(1);
+  expect(cancelCompanionRegionSelection).not.toHaveBeenCalled();
+  completion.resolve({} as never);
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '选择截图区域' })).toBeNull());
+});
+
 it('cancels a frozen region session exactly once on Escape', async () => {
   renderCompanion();
   await openMenu();
@@ -210,6 +232,22 @@ it('cancels a frozen region session exactly once on Escape', async () => {
 
   await waitFor(() => expect(cancelCompanionRegionSelection).toHaveBeenCalledTimes(1));
   expect(screen.getByRole('button', { name: '打开悬浮助手菜单' })).toBeVisible();
+});
+
+it('ignores repeated Escape while region cancellation is pending', async () => {
+  const cancellation = deferred<void>();
+  vi.mocked(cancelCompanionRegionSelection).mockReturnValueOnce(cancellation.promise);
+  renderCompanion();
+  await openMenu();
+
+  await userEvent.click(screen.getByRole('button', { name: '区域截图' }));
+  await screen.findByRole('dialog', { name: '选择截图区域' });
+  await userEvent.keyboard('{Escape}');
+  await userEvent.keyboard('{Escape}');
+
+  expect(cancelCompanionRegionSelection).toHaveBeenCalledTimes(1);
+  cancellation.resolve();
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '选择截图区域' })).toBeNull());
 });
 
 it('leaves the collapsed companion recoverable when frozen completion fails', async () => {
@@ -226,7 +264,10 @@ it('leaves the collapsed companion recoverable when frozen completion fails', as
 });
 
 it('keeps the frozen session when completion and restoration both fail', async () => {
-  vi.mocked(completeCompanionRegionSelection).mockRejectedValueOnce(new Error('save failed'));
+  vi.mocked(completeCompanionRegionSelection).mockRejectedValueOnce({
+    kind: 'window',
+    message: 'restore failed',
+  });
   vi.mocked(cancelCompanionRegionSelection).mockRejectedValueOnce(new Error('restore failed'));
   renderCompanion();
   await openMenu();
@@ -236,6 +277,12 @@ it('keeps the frozen session when completion and restoration both fail', async (
   fireEvent(overlay, pointerEvent('pointerup', { button: 0, clientX: 50, clientY: 55 }));
 
   expect(await screen.findByRole('alert')).toHaveTextContent('无法恢复悬浮助手窗口，请重试。');
+  expect(screen.getByRole('dialog', { name: '选择截图区域' })).toBeVisible();
+  expect(cancelCompanionRegionSelection).not.toHaveBeenCalled();
+
+  await userEvent.keyboard('{Escape}');
+
+  await waitFor(() => expect(cancelCompanionRegionSelection).toHaveBeenCalledTimes(1));
   expect(screen.getByRole('dialog', { name: '选择截图区域' })).toBeVisible();
 
   await userEvent.keyboard('{Escape}');
@@ -304,4 +351,14 @@ function pointerEvent(type: string, properties: Record<string, number>) {
     Object.defineProperty(event, name, { value });
   });
   return event;
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
 }

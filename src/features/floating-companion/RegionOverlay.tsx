@@ -7,6 +7,7 @@ type RegionOverlayProps = {
   scaleFactor: number;
   previewDataUrl: string;
   error?: string;
+  disabled?: boolean;
   onSelect: (region: CropRegion) => void;
   onCancel: () => void;
 };
@@ -15,6 +16,7 @@ export function RegionOverlay({
   scaleFactor,
   previewDataUrl,
   error,
+  disabled = false,
   onSelect,
   onCancel,
 }: RegionOverlayProps) {
@@ -23,31 +25,31 @@ export function RegionOverlay({
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
+      if (!disabled && event.key === 'Escape') {
         event.preventDefault();
         onCancel();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onCancel]);
+  }, [disabled, onCancel]);
 
   const selection = start && current ? normalizeSelection(start, current) : null;
 
   function begin(event: React.PointerEvent<HTMLDivElement>) {
-    if (event.button !== 0) return;
+    if (disabled || event.button !== 0) return;
     const point = { x: event.clientX, y: event.clientY };
     setStart(point);
     setCurrent(point);
   }
 
   function move(event: React.PointerEvent<HTMLDivElement>) {
-    if (!start || (event.buttons & 1) === 0) return;
+    if (disabled || !start || (event.buttons & 1) === 0) return;
     setCurrent({ x: event.clientX, y: event.clientY });
   }
 
   function finish(event: React.PointerEvent<HTMLDivElement>) {
-    if (!start || event.button !== 0) return;
+    if (disabled || !start || event.button !== 0) return;
     const logical = normalizeSelection(start, { x: event.clientX, y: event.clientY });
     setStart(null);
     setCurrent(null);
@@ -65,6 +67,7 @@ export function RegionOverlay({
       className="region-overlay"
       role="dialog"
       aria-label="选择截图区域"
+      aria-busy={disabled}
       onPointerDown={begin}
       onPointerMove={move}
       onPointerUp={finish}
