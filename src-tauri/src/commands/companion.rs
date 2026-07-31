@@ -515,10 +515,14 @@ where
         CompanionCommandError::Window("region selection is not active".to_owned())
     })?;
     restore_region_window(window, session.original_bounds)?;
-    let image = session.image.as_ref().ok_or_else(|| {
-        CompanionCommandError::Capture("region selection setup did not complete".to_owned())
-    })?;
-    let cropped = capture::crop_image(image, region)
+    let image = active
+        .take()
+        .expect("region session checked above")
+        .image
+        .ok_or_else(|| {
+            CompanionCommandError::Capture("region selection setup did not complete".to_owned())
+        })?;
+    let cropped = capture::crop_image(&image, region)
         .map_err(|error| CompanionCommandError::Capture(error.to_string()))?;
     let asset = capture::persist_captured_pixels(
         cropped,
@@ -528,7 +532,6 @@ where
     )
     .map_err(|error| CompanionCommandError::Capture(error.to_string()))?;
     emit_asset(&asset)?;
-    *active = None;
     Ok(asset)
 }
 

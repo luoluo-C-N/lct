@@ -490,7 +490,7 @@ fn invalid_region_restores_the_companion_without_emitting_or_persisting() {
 
     assert_eq!(emitted.load(Ordering::SeqCst), 0);
     assert_eq!(window.bounds().unwrap(), original);
-    cancel_region_selection_with(&window, &state).unwrap();
+    assert!(cancel_region_selection_with(&window, &state).is_err());
     assert!(repository
         .list_by_month(chrono::Utc::now().year(), chrono::Utc::now().month())
         .unwrap()
@@ -533,7 +533,48 @@ fn persistence_failure_restores_the_companion_without_emitting() {
 
     assert_eq!(emitted.load(Ordering::SeqCst), 0);
     assert_eq!(window.bounds().unwrap(), original);
-    cancel_region_selection_with(&window, &state).unwrap();
+    assert!(cancel_region_selection_with(&window, &state).is_err());
+    fs::remove_dir_all(temporary_directory).unwrap();
+}
+
+#[test]
+fn event_failure_clears_the_region_session_after_persistence() {
+    let original = physical_bounds(120, 80, 72, 72);
+    let operations = Arc::new(Mutex::new(Vec::new()));
+    let window = fake_region_window(original, physical_bounds(0, 0, 4, 4), operations.clone());
+    let capturer = fake_screen_capturer(operations);
+    let state = CompanionRegionSelectionState::default();
+    begin_region_selection_with(&window, &state, &capturer).unwrap();
+    let temporary_directory = temporary_region_directory("event-failure");
+    let repository =
+        AssetRepository::from_connection(Connection::open_in_memory().unwrap()).unwrap();
+
+    assert!(complete_region_selection_with(
+        &window,
+        &state,
+        CropRegion {
+            x: 0,
+            y: 0,
+            width: 2,
+            height: 2,
+        },
+        &temporary_directory,
+        &repository,
+        |_| Err(CompanionCommandError::Event(
+            "listener unavailable".to_owned()
+        )),
+    )
+    .is_err());
+
+    assert_eq!(window.bounds().unwrap(), original);
+    assert!(cancel_region_selection_with(&window, &state).is_err());
+    assert_eq!(
+        repository
+            .list_by_month(chrono::Utc::now().year(), chrono::Utc::now().month())
+            .unwrap()
+            .len(),
+        1
+    );
     fs::remove_dir_all(temporary_directory).unwrap();
 }
 
