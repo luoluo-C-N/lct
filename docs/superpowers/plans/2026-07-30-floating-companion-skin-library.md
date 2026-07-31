@@ -1,6 +1,6 @@
 # Floating Companion Skin Library Implementation Plan
 
-> **Pause checkpoint (2026-07-31):** Task 1 and Task 2 are complete and committed through `5d59ce0`. Task 3 has its exact `zip = 8.6.0` dependency added and locked, plus an unfinished RED test draft in the companion domain/repository and skin service tests. The draft currently does not compile because its fixture helpers and production contracts are not implemented. Resume inside Task 3 Step 1; do not treat the dependency or draft tests as a completed step.
+> **Completion checkpoint (2026-07-31):** Tasks 1-8 are implemented through `c89e85b`. Final verification passes with 61 Vitest and 71 Rust tests. The display-sized region overlay and Escape restoration were verified on Windows; the remaining manual smoke items are recorded in `docs/CONTINUATION.md` and the SDD verification report.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -790,7 +790,7 @@ git commit -m "feat: animate independent companion skins"
 - Consumes the completed application.
 - Produces final evidence, updated cross-account handoff, clean pushed branch, and refreshed local bundle.
 
-- [ ] **Step 1: Run formatting and complete automated verification**
+- [x] **Step 1: Run formatting and complete automated verification**
 
 ```powershell
 cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
@@ -803,7 +803,7 @@ git diff --check
 
 Expected: every command exits `0`; record exact test counts and the executable path.
 
-- [ ] **Step 2: Launch the debug application for Windows smoke**
+- [x] **Step 2: Launch the debug application for Windows smoke**
 
 ```powershell
 npm run tauri -- dev
@@ -822,11 +822,11 @@ Verify and record:
 
 If GUI automation cannot establish a fact, mark that item “manual verification required”; do not report it as passed.
 
-- [ ] **Step 3: Review only the new feature range**
+- [x] **Step 3: Review only the new feature range**
 
 Create a diff from `5b592ed` to current HEAD and request a fresh read-only review for spec compliance, security boundaries, event consistency, focus/keyboard behavior, and test quality. Fix only confirmed load-bearing findings with TDD and a dedicated commit.
 
-- [ ] **Step 4: Update the handoff document**
+- [x] **Step 4: Update the handoff document**
 
 Add:
 
@@ -838,7 +838,7 @@ Add:
 - known issues and future community/direct-reference/programmable-skin requirements
 - startup and cross-account continuation steps
 
-- [ ] **Step 5: Commit handoff documentation**
+- [x] **Step 5: Commit handoff documentation**
 
 ```powershell
 git add docs/CONTINUATION.md
