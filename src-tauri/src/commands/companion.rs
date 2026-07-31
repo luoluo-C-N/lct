@@ -9,7 +9,7 @@ use tauri::{Emitter, LogicalPosition, LogicalRect, LogicalSize, Manager, Runtime
 use thiserror::Error;
 
 use crate::{
-    domain::companion::{CompanionSettings, CompanionSkin, WindowPlacement},
+    domain::companion::{CompanionSettings, CompanionSkin, MotionSettings, WindowPlacement},
     repository::companion::{CompanionRepository, CompanionRepositoryError},
     services::skins::{self, SkinImportError},
 };
@@ -61,7 +61,11 @@ impl From<CompanionRepositoryError> for CompanionCommandError {
 
 impl From<SkinImportError> for CompanionCommandError {
     fn from(error: SkinImportError) -> Self {
-        Self::Import(error.to_string())
+        let category = error
+            .kind()
+            .map(|kind| format!("{kind:?}"))
+            .unwrap_or_else(|| "ImportFailed".to_owned());
+        Self::Import(format!("{category}: {error}"))
     }
 }
 
@@ -143,8 +147,9 @@ pub fn update_companion_skin<R: Runtime>(
             "motion values must be finite".to_owned(),
         ));
     }
-    skin.flow_speed = skin.flow_speed.clamp(0.5, 2.0);
-    skin.flow_intensity = skin.flow_intensity.clamp(0.0, 1.0);
+    let motion = MotionSettings::new(skin.flow_speed, skin.flow_intensity);
+    skin.flow_speed = motion.flow_speed;
+    skin.flow_intensity = motion.flow_intensity;
     repository.update_skin(&skin)?;
     emit_skin_state(&app, &repository)
 }

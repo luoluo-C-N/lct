@@ -146,7 +146,7 @@ pub struct MotionSettings {
 impl MotionSettings {
     pub fn new(flow_speed: f32, flow_intensity: f32) -> Self {
         Self {
-            flow_speed: flow_speed.clamp(0.0, 2.0),
+            flow_speed: flow_speed.clamp(0.5, 2.0),
             flow_intensity: flow_intensity.clamp(0.0, 1.0),
         }
     }

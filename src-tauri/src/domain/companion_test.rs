@@ -27,6 +27,7 @@ fn clamps_motion_settings_to_safe_ranges() {
 
     assert_eq!(settings.flow_speed, 2.0);
     assert_eq!(settings.flow_intensity, 0.0);
+    assert_eq!(MotionSettings::new(-1.0, 0.5).flow_speed, 0.5);
 }
 
 #[test]
