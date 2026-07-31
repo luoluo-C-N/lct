@@ -21,7 +21,7 @@ use crate::{
         complete_companion_region_selection, complete_region_selection_with, delete_companion_skin,
         handle_companion_close, handle_window_event, import_companion_skin,
         set_active_companion_skin, set_known_window_visible, update_companion_skin,
-        CompanionCommandError, CompanionRegionSelectionState, CompanionSkinState,
+        CompanionCommandError, CompanionRegionSelectionState, CompanionSkinState, MonitorSnapshot,
         RegionSelectionWindow, WindowBounds,
     },
     domain::asset::CaptureMode,
@@ -34,7 +34,7 @@ use crate::{
 struct FakeRegionWindow {
     bounds: Mutex<WindowBounds>,
     monitor: WindowBounds,
-    scale_factor: f64,
+    primary_scale_factor: f64,
     visible: AtomicBool,
     fail_operation: Mutex<Option<&'static str>>,
     operations: Arc<Mutex<Vec<&'static str>>>,
@@ -60,14 +60,12 @@ impl RegionSelectionWindow for FakeRegionWindow {
         Ok(*self.bounds.lock().unwrap())
     }
 
-    fn monitor_bounds(&self) -> Result<WindowBounds, CompanionCommandError> {
-        self.operation("monitor_bounds")?;
-        Ok(self.monitor)
-    }
-
-    fn scale_factor(&self) -> Result<f64, CompanionCommandError> {
-        self.operation("scale_factor")?;
-        Ok(self.scale_factor)
+    fn primary_monitor(&self) -> Result<MonitorSnapshot, CompanionCommandError> {
+        self.operation("primary_monitor")?;
+        Ok(MonitorSnapshot {
+            bounds: self.monitor,
+            scale_factor: self.primary_scale_factor,
+        })
     }
 
     fn set_bounds(&self, bounds: WindowBounds) -> Result<(), CompanionCommandError> {
@@ -287,18 +285,17 @@ fn region_selection_covers_the_monitor_and_restores_the_original_bounds() {
 
     let session = begin_region_selection_with(&window, &state, &capturer).unwrap();
 
-    assert_eq!(session.scale_factor, 1.5);
+    assert_eq!(session.scale_factor, 1.0);
     assert!(session
         .preview_data_url
         .starts_with("data:image/png;base64,"));
     assert_eq!(window.bounds().unwrap(), monitor);
     assert_eq!(capturer.calls.load(Ordering::SeqCst), 1);
     assert_eq!(
-        &operations.lock().unwrap()[..8],
+        &operations.lock().unwrap()[..7],
         &[
             "bounds",
-            "monitor_bounds",
-            "scale_factor",
+            "primary_monitor",
             "hide",
             "capture",
             "set_bounds",
@@ -674,7 +671,7 @@ fn fake_region_window(
     FakeRegionWindow {
         bounds: Mutex::new(original),
         monitor,
-        scale_factor: 1.5,
+        primary_scale_factor: 1.0,
         visible: AtomicBool::new(true),
         fail_operation: Mutex::new(None),
         operations,

@@ -36,6 +36,12 @@ pub(crate) struct WindowBounds {
     pub size: PhysicalSize<u32>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct MonitorSnapshot {
+    pub bounds: WindowBounds,
+    pub scale_factor: f64,
+}
+
 #[derive(Default)]
 pub struct CompanionRegionSelectionState {
     session: Mutex<Option<RegionCaptureSession>>,
@@ -55,8 +61,7 @@ pub struct RegionSelectionSession {
 
 pub(crate) trait RegionSelectionWindow {
     fn bounds(&self) -> Result<WindowBounds, CompanionCommandError>;
-    fn monitor_bounds(&self) -> Result<WindowBounds, CompanionCommandError>;
-    fn scale_factor(&self) -> Result<f64, CompanionCommandError>;
+    fn primary_monitor(&self) -> Result<MonitorSnapshot, CompanionCommandError>;
     fn set_bounds(&self, bounds: WindowBounds) -> Result<(), CompanionCommandError>;
     fn hide(&self) -> Result<(), CompanionCommandError>;
     fn show(&self) -> Result<(), CompanionCommandError>;
@@ -75,20 +80,18 @@ impl<R: Runtime> RegionSelectionWindow for tauri::WebviewWindow<R> {
         })
     }
 
-    fn monitor_bounds(&self) -> Result<WindowBounds, CompanionCommandError> {
+    fn primary_monitor(&self) -> Result<MonitorSnapshot, CompanionCommandError> {
         let monitor = self
             .primary_monitor()
             .map_err(|error| CompanionCommandError::Window(error.to_string()))?
             .ok_or_else(|| CompanionCommandError::WindowUnavailable("monitor".to_owned()))?;
-        Ok(WindowBounds {
-            position: *monitor.position(),
-            size: *monitor.size(),
+        Ok(MonitorSnapshot {
+            bounds: WindowBounds {
+                position: *monitor.position(),
+                size: *monitor.size(),
+            },
+            scale_factor: monitor.scale_factor(),
         })
-    }
-
-    fn scale_factor(&self) -> Result<f64, CompanionCommandError> {
-        self.scale_factor()
-            .map_err(|error| CompanionCommandError::Window(error.to_string()))
     }
 
     fn set_bounds(&self, bounds: WindowBounds) -> Result<(), CompanionCommandError> {
@@ -435,8 +438,7 @@ pub(crate) fn begin_region_selection_with(
         ));
     }
     let original = window.bounds()?;
-    let monitor = window.monitor_bounds()?;
-    let scale_factor = window.scale_factor()?;
+    let monitor = window.primary_monitor()?;
     window.hide()?;
     let setup = (|| {
         let image = capturer
@@ -444,7 +446,7 @@ pub(crate) fn begin_region_selection_with(
             .map_err(|error| CompanionCommandError::Capture(error.to_string()))?;
         let preview_data_url = capture::encode_png_data_url(&image)
             .map_err(|error| CompanionCommandError::Capture(error.to_string()))?;
-        window.set_bounds(monitor)?;
+        window.set_bounds(monitor.bounds)?;
         window.show()?;
         window.focus()?;
         Ok((image, preview_data_url))
@@ -465,7 +467,7 @@ pub(crate) fn begin_region_selection_with(
         image,
     });
     Ok(RegionSelectionSession {
-        scale_factor,
+        scale_factor: monitor.scale_factor,
         preview_data_url,
     })
 }
