@@ -154,6 +154,7 @@ pub(crate) fn resolve_capture_target(
     }
 }
 
+#[cfg(test)]
 pub(crate) fn crop_image(
     image: image::RgbaImage,
     region: CropRegion,
