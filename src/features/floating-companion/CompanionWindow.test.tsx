@@ -3,7 +3,8 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event';
 import {
   beginCompanionRegionSelection,
-  finishCompanionRegionSelection,
+  cancelCompanionRegionSelection,
+  completeCompanionRegionSelection,
   focusMainWindow,
   getCompanionSettings,
   hideCompanion,
@@ -30,7 +31,8 @@ vi.mock('../../lib/companion', async () => {
     focusMainWindow: vi.fn(),
     hideCompanion: vi.fn(),
     beginCompanionRegionSelection: vi.fn(),
-    finishCompanionRegionSelection: vi.fn(),
+    completeCompanionRegionSelection: vi.fn(),
+    cancelCompanionRegionSelection: vi.fn(),
     subscribeToCompanionSkinChanged: vi.fn(),
     subscribeToCompanionSettingsChanged: vi.fn(),
     saveCompanionPlacement: vi.fn(),
@@ -70,8 +72,12 @@ beforeEach(() => {
   vi.mocked(hideCompanion).mockResolvedValue({
     activeSkinId: 'quiet-aurora', motionEnabled: true, visible: false, placement: null,
   });
-  vi.mocked(beginCompanionRegionSelection).mockResolvedValue({ scaleFactor: 2 });
-  vi.mocked(finishCompanionRegionSelection).mockResolvedValue(undefined);
+  vi.mocked(beginCompanionRegionSelection).mockResolvedValue({
+    scaleFactor: 2,
+    previewDataUrl: 'data:image/png;base64,frozen-screen',
+  });
+  vi.mocked(completeCompanionRegionSelection).mockResolvedValue({} as never);
+  vi.mocked(cancelCompanionRegionSelection).mockResolvedValue(undefined);
   vi.mocked(subscribeToCompanionSkinChanged).mockResolvedValue(vi.fn());
   vi.mocked(subscribeToCompanionSettingsChanged).mockResolvedValue(vi.fn());
   vi.mocked(capture).mockResolvedValue(undefined);
@@ -174,18 +180,63 @@ it('keeps capture and import failures recoverable', async () => {
   expect(await screen.findByRole('alert')).toHaveTextContent('导入失败，请重新选择图片。');
 });
 
-it('selects a DPI-correct region before invoking region capture', async () => {
+it('crops the frozen preview without invoking a second live capture', async () => {
   renderCompanion();
   await openMenu();
 
   await userEvent.click(screen.getByRole('button', { name: '区域截图' }));
   const overlay = await screen.findByRole('dialog', { name: '选择截图区域' });
+  expect(screen.getByRole('img', { name: '截图冻结画面' })).toHaveAttribute(
+    'src',
+    'data:image/png;base64,frozen-screen',
+  );
   fireEvent(overlay, pointerEvent('pointerdown', { button: 0, clientX: 10, clientY: 15 }));
   fireEvent(overlay, pointerEvent('pointermove', { buttons: 1, clientX: 50, clientY: 55 }));
   fireEvent(overlay, pointerEvent('pointerup', { button: 0, clientX: 50, clientY: 55 }));
 
-  await waitFor(() => expect(finishCompanionRegionSelection).toHaveBeenCalledTimes(1));
-  expect(capture).toHaveBeenCalledWith('region', { x: 20, y: 30, width: 80, height: 80 });
+  await waitFor(() => expect(completeCompanionRegionSelection).toHaveBeenCalledWith({
+    x: 20, y: 30, width: 80, height: 80,
+  }));
+  expect(capture).not.toHaveBeenCalled();
+});
+
+it('cancels a frozen region session exactly once on Escape', async () => {
+  renderCompanion();
+  await openMenu();
+
+  await userEvent.click(screen.getByRole('button', { name: '区域截图' }));
+  await screen.findByRole('dialog', { name: '选择截图区域' });
+  await userEvent.keyboard('{Escape}');
+
+  await waitFor(() => expect(cancelCompanionRegionSelection).toHaveBeenCalledTimes(1));
+  expect(screen.getByRole('button', { name: '打开悬浮助手菜单' })).toBeVisible();
+});
+
+it('leaves the collapsed companion recoverable when frozen completion fails', async () => {
+  vi.mocked(completeCompanionRegionSelection).mockRejectedValueOnce(new Error('save failed'));
+  renderCompanion();
+  await openMenu();
+  await userEvent.click(screen.getByRole('button', { name: '区域截图' }));
+  const overlay = await screen.findByRole('dialog', { name: '选择截图区域' });
+  fireEvent(overlay, pointerEvent('pointerdown', { button: 0, clientX: 10, clientY: 15 }));
+  fireEvent(overlay, pointerEvent('pointerup', { button: 0, clientX: 50, clientY: 55 }));
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('截图失败，请重试。');
+  expect(screen.getByRole('button', { name: '打开悬浮助手菜单' })).toBeVisible();
+});
+
+it('reports a native restore failure after leaving the selection overlay', async () => {
+  vi.mocked(cancelCompanionRegionSelection).mockRejectedValueOnce(new Error('restore failed'));
+  renderCompanion();
+  await openMenu();
+  await userEvent.click(screen.getByRole('button', { name: '区域截图' }));
+  await screen.findByRole('dialog', { name: '选择截图区域' });
+
+  await userEvent.keyboard('{Escape}');
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('无法恢复悬浮助手窗口，请重试。');
+  expect(cancelCompanionRegionSelection).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole('button', { name: '打开悬浮助手菜单' })).toBeVisible();
 });
 
 function renderCompanion() {

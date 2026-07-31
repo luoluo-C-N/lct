@@ -4,7 +4,8 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   beginCompanionRegionSelection,
-  finishCompanionRegionSelection,
+  cancelCompanionRegionSelection,
+  completeCompanionRegionSelection,
   importCompanionSkin,
   listCompanionSkins,
   setActiveCompanionSkin,
@@ -14,7 +15,7 @@ import {
   type CompanionSettings,
   type CompanionSkinState,
 } from './companion';
-import { capture, selectCompanionSkinFile } from './desktop';
+import { selectCompanionSkinFile } from './desktop';
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
@@ -55,17 +56,17 @@ describe('companion IPC adapter', () => {
     });
   });
 
-  it('forwards the selected region and native selection session commands', async () => {
+  it('forwards the frozen region session commands with the selected pixels', async () => {
+    const region = { x: 30, y: 45, width: 120, height: 75 };
     await beginCompanionRegionSelection();
-    await finishCompanionRegionSelection();
-    await capture('region', { x: 30, y: 45, width: 120, height: 75 });
+    await completeCompanionRegionSelection(region);
+    await cancelCompanionRegionSelection();
 
     expect(invoke).toHaveBeenNthCalledWith(1, 'begin_companion_region_selection');
-    expect(invoke).toHaveBeenNthCalledWith(2, 'finish_companion_region_selection');
-    expect(invoke).toHaveBeenNthCalledWith(3, 'capture', {
-      mode: 'region',
-      region: { x: 30, y: 45, width: 120, height: 75 },
+    expect(invoke).toHaveBeenNthCalledWith(2, 'complete_companion_region_selection', {
+      region,
     });
+    expect(invoke).toHaveBeenNthCalledWith(3, 'cancel_companion_region_selection');
   });
 
   it('forwards complete event payloads and returns each unlisten function', async () => {

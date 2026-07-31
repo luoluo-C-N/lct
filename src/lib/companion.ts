@@ -1,5 +1,7 @@
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import type { Asset } from './assets';
+import type { CropRegion } from './desktop';
 
 export type VisualPreset =
   | 'quiet_aurora'
@@ -44,6 +46,11 @@ export type SkinImportSelection = {
   kind: 'image' | 'package';
 };
 
+export type RegionSelectionSession = {
+  scaleFactor: number;
+  previewDataUrl: string;
+};
+
 export const listCompanionSkins = () =>
   invoke<CompanionSkin[]>('list_companion_skins');
 
@@ -74,10 +81,13 @@ export const setCompanionExpanded = (expanded: boolean) =>
   invoke<void>('set_companion_expanded', { expanded });
 
 export const beginCompanionRegionSelection = () =>
-  invoke<{ scaleFactor: number }>('begin_companion_region_selection');
+  invoke<RegionSelectionSession>('begin_companion_region_selection');
 
-export const finishCompanionRegionSelection = () =>
-  invoke<void>('finish_companion_region_selection');
+export const completeCompanionRegionSelection = (region: CropRegion) =>
+  invoke<Asset>('complete_companion_region_selection', { region });
+
+export const cancelCompanionRegionSelection = () =>
+  invoke<void>('cancel_companion_region_selection');
 
 export const saveCompanionPlacement = (placement: WindowPlacement) =>
   invoke<CompanionSettings>('save_companion_placement', { placement });

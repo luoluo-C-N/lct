@@ -5,11 +5,17 @@ type Point = { x: number; y: number };
 
 type RegionOverlayProps = {
   scaleFactor: number;
+  previewDataUrl: string;
   onSelect: (region: CropRegion) => void;
   onCancel: () => void;
 };
 
-export function RegionOverlay({ scaleFactor, onSelect, onCancel }: RegionOverlayProps) {
+export function RegionOverlay({
+  scaleFactor,
+  previewDataUrl,
+  onSelect,
+  onCancel,
+}: RegionOverlayProps) {
   const [start, setStart] = useState<Point | null>(null);
   const [current, setCurrent] = useState<Point | null>(null);
 
@@ -65,6 +71,12 @@ export function RegionOverlay({ scaleFactor, onSelect, onCancel }: RegionOverlay
         setCurrent(null);
       }}
     >
+      <img
+        className="region-overlay__preview"
+        src={previewDataUrl}
+        alt="截图冻结画面"
+        draggable={false}
+      />
       {selection && (
         <span
           className="region-overlay__selection"

@@ -2,7 +2,8 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   beginCompanionRegionSelection,
-  finishCompanionRegionSelection,
+  cancelCompanionRegionSelection,
+  completeCompanionRegionSelection,
   focusMainWindow,
   getCompanionSettings,
   hideCompanion,
@@ -14,6 +15,7 @@ import {
   type CompanionSettings,
   type CompanionSkin,
   type CompanionSkinState,
+  type RegionSelectionSession,
 } from '../../lib/companion';
 import {
   capture,
@@ -60,7 +62,7 @@ export function CompanionWindow({
   const [error, setError] = useState('');
   const [horizontalAnchor, setHorizontalAnchor] = useState<'left' | 'right'>('right');
   const [verticalAnchor, setVerticalAnchor] = useState<'top' | 'bottom'>('bottom');
-  const [regionScaleFactor, setRegionScaleFactor] = useState<number | null>(null);
+  const [regionSession, setRegionSession] = useState<RegionSelectionSession | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const dragOriginRef = useRef<{ x: number; y: number } | null>(null);
   const suppressClickRef = useRef(false);
@@ -217,7 +219,7 @@ export function CompanionWindow({
         await setCompanionExpanded(false);
         setOpen(false);
         const session = await beginCompanionRegionSelection();
-        setRegionScaleFactor(session.scaleFactor);
+        setRegionSession(session);
         setLastAction('拖拽选择截图区域');
         return;
       }
@@ -232,13 +234,17 @@ export function CompanionWindow({
   }
 
   async function completeRegionCapture(region: CropRegion) {
+    setRegionSession(null);
     try {
-      await finishCompanionRegionSelection();
-      setRegionScaleFactor(null);
-      await capture('region', region);
+      await completeCompanionRegionSelection(region);
       setStatus('success');
       setLastAction('region 截图已保存');
     } catch {
+      try {
+        await cancelCompanionRegionSelection();
+      } catch {
+        // Completion failures after native restoration have no active session to cancel.
+      }
       setStatus('error');
       setLastAction('');
       setError('截图失败，请重试。');
@@ -246,9 +252,9 @@ export function CompanionWindow({
   }
 
   async function cancelRegionCapture() {
+    setRegionSession(null);
     try {
-      await finishCompanionRegionSelection();
-      setRegionScaleFactor(null);
+      await cancelCompanionRegionSelection();
       setStatus('idle');
       setLastAction('已取消区域截图');
     } catch {
@@ -293,10 +299,11 @@ export function CompanionWindow({
     }
   }
 
-  if (regionScaleFactor !== null) {
+  if (regionSession !== null) {
     return (
       <RegionOverlay
-        scaleFactor={regionScaleFactor}
+        scaleFactor={regionSession.scaleFactor}
+        previewDataUrl={regionSession.previewDataUrl}
         onSelect={(region) => void completeRegionCapture(region)}
         onCancel={() => void cancelRegionCapture()}
       />
