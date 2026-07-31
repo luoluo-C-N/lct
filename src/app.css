@@ -3,8 +3,12 @@ body { margin: 0; min-width: 760px; }
 button { font: inherit; }
 .application-shell { min-height: 100vh; background: radial-gradient(circle at 75% 10%, #693b6533, transparent 34%), #141522; }
 .application-header { height: 52px; padding: 0 28px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #ffffff12; }
+.application-actions { display: flex; align-items: center; gap: 14px; }
 .application-header button { border: 0; background: transparent; color: #9e97af; padding: 8px 12px; cursor: pointer; }
 .application-header button.selected { color: #f4cfaa; border-bottom: 2px solid #e9a989; }
+.application-header .companion-visibility-button { border: 1px solid #55d8cf66; border-radius: 3px; padding: 6px 10px; color: #bcebe6; }
+.application-header .companion-visibility-button:disabled { cursor: default; opacity: .6; }
+.application-alert { margin: 0; border-left: 3px solid #d98f9b; padding: 8px 28px; background: #2c202b; color: #ffd7dc; }
 .application-shell > main { min-height: calc(100vh - 53px); display: grid; grid-template-columns: minmax(220px, 26vw) 1fr; gap: 4vw; padding: clamp(24px, 4vh, 56px) clamp(28px, 4vw, 72px); }
 .application-shell aside { position: relative; overflow: hidden; min-height: 560px; }
 .application-shell aside::after { content: ""; position: absolute; right: 18%; top: 16%; width: 48%; height: 67%; border-left: 1px solid #a779b477; border-radius: 54% 0 0 50%; transform: rotate(3deg); pointer-events: none; }
@@ -92,7 +96,7 @@ button { font: inherit; }
 @media (max-width: 760px) {
   body { min-width: 320px; }
   .application-header { height: auto; min-height: 52px; padding: 8px 16px; gap: 12px; }
-  .application-header > div { display: flex; flex-wrap: wrap; justify-content: end; }
+  .application-actions, .application-actions > div { display: flex; flex-wrap: wrap; justify-content: end; }
   .skin-library { padding: 24px 16px 40px; }
   .skin-library-toolbar { align-items: start; }
   .skin-grid { grid-template-columns: 1fr; }

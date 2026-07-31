@@ -128,8 +128,7 @@ it('initializes both application views with the current local month', async () =
   render(<App now={() => new Date(2031, 1, 14, 12)} />);
 
   await waitFor(() => {
-    expect(invoke).toHaveBeenNthCalledWith(
-      1,
+    expect(invoke).toHaveBeenCalledWith(
       'list_assets_by_month',
       { year: 2031, month: 2 },
     );
@@ -138,11 +137,13 @@ it('initializes both application views with the current local month', async () =
   await userEvent.click(screen.getByRole('button', { name: '图库' }));
 
   await waitFor(() => {
-    expect(invoke).toHaveBeenNthCalledWith(
-      2,
-      'list_assets_by_month',
-      { year: 2031, month: 2 },
-    );
+    const monthLoads = vi.mocked(invoke).mock.calls.filter(([command, args]) => {
+      const monthArgs = args as { year?: number; month?: number } | undefined;
+      return command === 'list_assets_by_month'
+        && monthArgs?.year === 2031
+        && monthArgs.month === 2;
+    });
+    expect(monthLoads).toHaveLength(2);
   });
 });
 
