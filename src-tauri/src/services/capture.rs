@@ -36,12 +36,21 @@ pub(crate) fn crop_image(
     image: image::RgbaImage,
     region: CropRegion,
 ) -> Result<image::RgbaImage, CaptureError> {
-    let right = region.x.checked_add(region.width).ok_or(CaptureError::InvalidCropRegion)?;
-    let bottom = region.y.checked_add(region.height).ok_or(CaptureError::InvalidCropRegion)?;
+    let right = region
+        .x
+        .checked_add(region.width)
+        .ok_or(CaptureError::InvalidCropRegion)?;
+    let bottom = region
+        .y
+        .checked_add(region.height)
+        .ok_or(CaptureError::InvalidCropRegion)?;
     if region.width == 0 || region.height == 0 || right > image.width() || bottom > image.height() {
         return Err(CaptureError::InvalidCropRegion);
     }
-    Ok(image::imageops::crop_imm(&image, region.x, region.y, region.width, region.height).to_image())
+    Ok(
+        image::imageops::crop_imm(&image, region.x, region.y, region.width, region.height)
+            .to_image(),
+    )
 }
 
 pub(crate) fn validate_region(

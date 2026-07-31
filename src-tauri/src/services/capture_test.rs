@@ -7,7 +7,8 @@ use std::{
 use rusqlite::Connection;
 
 use crate::{
-    domain::asset::AssetSource, repository::assets::AssetRepository,
+    domain::asset::AssetSource,
+    repository::assets::AssetRepository,
     services::capture::{crop_image, validate_region, CaptureMode, CropRegion},
 };
 
@@ -15,7 +16,16 @@ use crate::{
 fn crops_a_screenshot_to_the_requested_region() {
     let image = image::RgbaImage::from_fn(4, 3, |x, y| image::Rgba([x as u8, y as u8, 0, 255]));
 
-    let cropped = crop_image(image, CropRegion { x: 1, y: 1, width: 2, height: 2 }).unwrap();
+    let cropped = crop_image(
+        image,
+        CropRegion {
+            x: 1,
+            y: 1,
+            width: 2,
+            height: 2,
+        },
+    )
+    .unwrap();
 
     assert_eq!(cropped.dimensions(), (2, 2));
     assert_eq!(cropped.get_pixel(0, 0), &image::Rgba([1, 1, 0, 255]));
@@ -25,7 +35,10 @@ fn crops_a_screenshot_to_the_requested_region() {
 fn region_capture_requires_a_crop_region() {
     let error = validate_region(CaptureMode::Region, None).unwrap_err();
 
-    assert_eq!(error.to_string(), "a crop region is required for region capture");
+    assert_eq!(
+        error.to_string(),
+        "a crop region is required for region capture"
+    );
 }
 
 #[test]
@@ -44,7 +57,8 @@ fn capture_persistence_removes_temporary_image_after_creating_asset() {
         CaptureMode::Region,
         &data_directory,
         &repository,
-    ).unwrap();
+    )
+    .unwrap();
 
     assert!(!source_path.exists());
     assert!(asset.original_path.exists());

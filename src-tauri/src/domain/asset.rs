@@ -24,8 +24,28 @@ pub struct Asset {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum CaptureMode { Region, Window, Fullscreen }
-impl CaptureMode { pub(crate) fn as_str(self) -> &'static str { match self { Self::Region => "region", Self::Window => "window", Self::Fullscreen => "fullscreen" } } pub(crate) fn parse(value: &str) -> Option<Self> { match value { "region" => Some(Self::Region), "window" => Some(Self::Window), "fullscreen" => Some(Self::Fullscreen), _ => None } } }
+pub enum CaptureMode {
+    Region,
+    Window,
+    Fullscreen,
+}
+impl CaptureMode {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Region => "region",
+            Self::Window => "window",
+            Self::Fullscreen => "fullscreen",
+        }
+    }
+    pub(crate) fn parse(value: &str) -> Option<Self> {
+        match value {
+            "region" => Some(Self::Region),
+            "window" => Some(Self::Window),
+            "fullscreen" => Some(Self::Fullscreen),
+            _ => None,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
