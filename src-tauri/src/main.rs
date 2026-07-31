@@ -43,6 +43,7 @@ fn manage_repository_states<R: tauri::Runtime>(
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .manage(commands::companion::CompanionRegionSelectionState::default())
         .setup(|app| {
             let data_directory = app.path().app_local_data_dir()?;
             std::fs::create_dir_all(&data_directory)?;
@@ -81,6 +82,8 @@ fn main() {
             commands::companion::hide_companion,
             commands::companion::focus_main_window,
             commands::companion::set_companion_expanded,
+            commands::companion::begin_companion_region_selection,
+            commands::companion::finish_companion_region_selection,
             commands::companion::save_companion_placement,
         ])
         .run(tauri::generate_context!())

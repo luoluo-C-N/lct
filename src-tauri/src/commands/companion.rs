@@ -1,11 +1,15 @@
 use std::{
     fs,
     path::PathBuf,
+    sync::Mutex,
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use serde::{Deserialize, Serialize};
-use tauri::{Emitter, LogicalPosition, LogicalRect, LogicalSize, Manager, Runtime, State};
+use tauri::{
+    Emitter, LogicalPosition, LogicalRect, LogicalSize, Manager, PhysicalPosition, PhysicalSize,
+    Runtime, State,
+};
 use thiserror::Error;
 
 use crate::{
@@ -22,6 +26,65 @@ const EXPANDED_SIZE: LogicalSize<f64> = LogicalSize {
     width: 232.0,
     height: 320.0,
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct WindowBounds {
+    pub position: PhysicalPosition<i32>,
+    pub size: PhysicalSize<u32>,
+}
+
+#[derive(Default)]
+pub struct CompanionRegionSelectionState {
+    saved_bounds: Mutex<Option<WindowBounds>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegionSelectionSession {
+    pub scale_factor: f64,
+}
+
+pub(crate) trait RegionSelectionWindow {
+    fn bounds(&self) -> Result<WindowBounds, CompanionCommandError>;
+    fn monitor_bounds(&self) -> Result<WindowBounds, CompanionCommandError>;
+    fn scale_factor(&self) -> Result<f64, CompanionCommandError>;
+    fn set_bounds(&self, bounds: WindowBounds) -> Result<(), CompanionCommandError>;
+}
+
+impl<R: Runtime> RegionSelectionWindow for tauri::WebviewWindow<R> {
+    fn bounds(&self) -> Result<WindowBounds, CompanionCommandError> {
+        Ok(WindowBounds {
+            position: self
+                .outer_position()
+                .map_err(|error| CompanionCommandError::Window(error.to_string()))?,
+            size: self
+                .outer_size()
+                .map_err(|error| CompanionCommandError::Window(error.to_string()))?,
+        })
+    }
+
+    fn monitor_bounds(&self) -> Result<WindowBounds, CompanionCommandError> {
+        let monitor = self
+            .primary_monitor()
+            .map_err(|error| CompanionCommandError::Window(error.to_string()))?
+            .ok_or_else(|| CompanionCommandError::WindowUnavailable("monitor".to_owned()))?;
+        Ok(WindowBounds {
+            position: *monitor.position(),
+            size: *monitor.size(),
+        })
+    }
+
+    fn scale_factor(&self) -> Result<f64, CompanionCommandError> {
+        self.scale_factor()
+            .map_err(|error| CompanionCommandError::Window(error.to_string()))
+    }
+
+    fn set_bounds(&self, bounds: WindowBounds) -> Result<(), CompanionCommandError> {
+        self.set_position(bounds.position)
+            .and_then(|_| self.set_size(bounds.size))
+            .map_err(|error| CompanionCommandError::Window(error.to_string()))
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -284,6 +347,66 @@ pub fn set_companion_expanded<R: Runtime>(
         .set_position(position)
         .and_then(|_| window.set_size(size))
         .map_err(|error| CompanionCommandError::Window(error.to_string()))
+}
+
+#[tauri::command]
+pub fn begin_companion_region_selection<R: Runtime>(
+    app: tauri::AppHandle<R>,
+    state: State<'_, CompanionRegionSelectionState>,
+) -> Result<RegionSelectionSession, CompanionCommandError> {
+    let window = known_window("companion", &app)?;
+    begin_region_selection_with(&window, &state)
+}
+
+#[tauri::command]
+pub fn finish_companion_region_selection<R: Runtime>(
+    app: tauri::AppHandle<R>,
+    state: State<'_, CompanionRegionSelectionState>,
+) -> Result<(), CompanionCommandError> {
+    let window = known_window("companion", &app)?;
+    finish_region_selection_with(&window, &state)
+}
+
+pub(crate) fn begin_region_selection_with(
+    window: &dyn RegionSelectionWindow,
+    state: &CompanionRegionSelectionState,
+) -> Result<RegionSelectionSession, CompanionCommandError> {
+    let mut saved = state.saved_bounds.lock().map_err(|_| {
+        CompanionCommandError::Window("region selection state is unavailable".to_owned())
+    })?;
+    if saved.is_some() {
+        return Err(CompanionCommandError::Window(
+            "region selection is already active".to_owned(),
+        ));
+    }
+    let original = window.bounds()?;
+    let monitor = window.monitor_bounds()?;
+    let scale_factor = window.scale_factor()?;
+    if let Err(error) = window.set_bounds(monitor) {
+        if let Err(rollback_error) = window.set_bounds(original) {
+            return Err(CompanionCommandError::Window(format!(
+                "{error}; restoring companion bounds failed: {rollback_error}"
+            )));
+        }
+        return Err(error);
+    }
+    *saved = Some(original);
+    Ok(RegionSelectionSession { scale_factor })
+}
+
+pub(crate) fn finish_region_selection_with(
+    window: &dyn RegionSelectionWindow,
+    state: &CompanionRegionSelectionState,
+) -> Result<(), CompanionCommandError> {
+    let mut saved = state.saved_bounds.lock().map_err(|_| {
+        CompanionCommandError::Window("region selection state is unavailable".to_owned())
+    })?;
+    let original = saved.ok_or_else(|| {
+        CompanionCommandError::Window("region selection is not active".to_owned())
+    })?;
+    window.set_bounds(original)?;
+    *saved = None;
+    Ok(())
 }
 
 #[tauri::command]

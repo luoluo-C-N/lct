@@ -1,23 +1,60 @@
 use std::{
     fs,
-    sync::mpsc,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc, Mutex,
+    },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use rusqlite::Connection;
 use tauri::{
-    Listener, LogicalPosition, LogicalRect, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder,
+    Listener, LogicalPosition, LogicalRect, LogicalSize, Manager, PhysicalPosition, PhysicalSize,
+    WebviewUrl, WebviewWindowBuilder,
 };
 
 use crate::{
     commands::companion::{
-        anchored_companion_bounds, delete_companion_skin, handle_companion_close,
-        handle_window_event, import_companion_skin, set_active_companion_skin,
-        set_known_window_visible, update_companion_skin, CompanionCommandError, CompanionSkinState,
+        anchored_companion_bounds, begin_region_selection_with, delete_companion_skin,
+        finish_region_selection_with, handle_companion_close, handle_window_event,
+        import_companion_skin, set_active_companion_skin, set_known_window_visible,
+        update_companion_skin, CompanionCommandError, CompanionRegionSelectionState,
+        CompanionSkinState, RegionSelectionWindow, WindowBounds,
     },
     domain::companion::{CompanionSkin, SkinSource, VisualPreset},
     repository::companion::CompanionRepository,
 };
+
+struct FakeRegionWindow {
+    bounds: Mutex<WindowBounds>,
+    monitor: WindowBounds,
+    scale_factor: f64,
+    fail_next_set: AtomicBool,
+}
+
+impl RegionSelectionWindow for FakeRegionWindow {
+    fn bounds(&self) -> Result<WindowBounds, CompanionCommandError> {
+        Ok(*self.bounds.lock().unwrap())
+    }
+
+    fn monitor_bounds(&self) -> Result<WindowBounds, CompanionCommandError> {
+        Ok(self.monitor)
+    }
+
+    fn scale_factor(&self) -> Result<f64, CompanionCommandError> {
+        Ok(self.scale_factor)
+    }
+
+    fn set_bounds(&self, bounds: WindowBounds) -> Result<(), CompanionCommandError> {
+        if self.fail_next_set.swap(false, Ordering::SeqCst) {
+            return Err(CompanionCommandError::Window(
+                "injected resize failure".to_owned(),
+            ));
+        }
+        *self.bounds.lock().unwrap() = bounds;
+        Ok(())
+    }
+}
 
 #[test]
 fn setting_active_skin_emits_exactly_once_after_commit() {
@@ -183,6 +220,40 @@ fn expansion_anchors_to_the_nearest_monitor_edges() {
 }
 
 #[test]
+fn region_selection_covers_the_monitor_and_restores_the_original_bounds() {
+    let original = physical_bounds(120, 80, 72, 72);
+    let monitor = physical_bounds(0, 0, 1920, 1080);
+    let window = fake_region_window(original, monitor);
+    let state = CompanionRegionSelectionState::default();
+
+    let session = begin_region_selection_with(&window, &state).unwrap();
+
+    assert_eq!(session.scale_factor, 1.5);
+    assert_eq!(window.bounds().unwrap(), monitor);
+    assert!(begin_region_selection_with(&window, &state).is_err());
+
+    finish_region_selection_with(&window, &state).unwrap();
+    assert_eq!(window.bounds().unwrap(), original);
+    assert!(finish_region_selection_with(&window, &state).is_err());
+}
+
+#[test]
+fn failed_region_selection_setup_restores_the_original_bounds() {
+    let original = physical_bounds(120, 80, 72, 72);
+    let window = FakeRegionWindow {
+        bounds: Mutex::new(original),
+        monitor: physical_bounds(0, 0, 1920, 1080),
+        scale_factor: 1.5,
+        fail_next_set: AtomicBool::new(true),
+    };
+    let state = CompanionRegionSelectionState::default();
+
+    assert!(begin_region_selection_with(&window, &state).is_err());
+    assert_eq!(window.bounds().unwrap(), original);
+    assert!(finish_region_selection_with(&window, &state).is_err());
+}
+
+#[test]
 fn collapsing_restores_the_orb_position_after_right_bottom_expansion() {
     let monitor = LogicalRect {
         position: LogicalPosition::new(0.0, 0.0),
@@ -279,4 +350,20 @@ fn mock_app() -> tauri::App<tauri::test::MockRuntime> {
     .build()
     .unwrap();
     app
+}
+
+fn physical_bounds(x: i32, y: i32, width: u32, height: u32) -> WindowBounds {
+    WindowBounds {
+        position: PhysicalPosition::new(x, y),
+        size: PhysicalSize::new(width, height),
+    }
+}
+
+fn fake_region_window(original: WindowBounds, monitor: WindowBounds) -> FakeRegionWindow {
+    FakeRegionWindow {
+        bounds: Mutex::new(original),
+        monitor,
+        scale_factor: 1.5,
+        fail_next_set: AtomicBool::new(false),
+    }
 }

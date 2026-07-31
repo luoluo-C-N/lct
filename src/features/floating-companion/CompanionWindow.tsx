@@ -1,6 +1,8 @@
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  beginCompanionRegionSelection,
+  finishCompanionRegionSelection,
   focusMainWindow,
   getCompanionSettings,
   hideCompanion,
@@ -13,9 +15,16 @@ import {
   type CompanionSkin,
   type CompanionSkinState,
 } from '../../lib/companion';
-import { capture, importFiles, selectImageFiles, type CaptureMode } from '../../lib/desktop';
+import {
+  capture,
+  importFiles,
+  selectImageFiles,
+  type CaptureMode,
+  type CropRegion,
+} from '../../lib/desktop';
 import { CompanionMenu } from './CompanionMenu';
 import { CompanionOrb, type CompanionStatus } from './CompanionOrb';
+import { RegionOverlay } from './RegionOverlay';
 import { useCompanionPosition, type CompanionWindowApi } from './useCompanionPosition';
 
 const fallbackSkin: CompanionSkin = {
@@ -51,6 +60,7 @@ export function CompanionWindow({
   const [error, setError] = useState('');
   const [horizontalAnchor, setHorizontalAnchor] = useState<'left' | 'right'>('right');
   const [verticalAnchor, setVerticalAnchor] = useState<'top' | 'bottom'>('bottom');
+  const [regionScaleFactor, setRegionScaleFactor] = useState<number | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const dragOriginRef = useRef<{ x: number; y: number } | null>(null);
   const suppressClickRef = useRef(false);
@@ -203,6 +213,14 @@ export function CompanionWindow({
     setStatus('working');
     setLastAction(`${mode} 截图中`);
     try {
+      if (mode === 'region') {
+        await setCompanionExpanded(false);
+        setOpen(false);
+        const session = await beginCompanionRegionSelection();
+        setRegionScaleFactor(session.scaleFactor);
+        setLastAction('拖拽选择截图区域');
+        return;
+      }
       await capture(mode);
       setStatus('success');
       setLastAction(`${mode} 截图已保存`);
@@ -210,6 +228,31 @@ export function CompanionWindow({
       setStatus('error');
       setLastAction('');
       setError('截图失败，请重试。');
+    }
+  }
+
+  async function completeRegionCapture(region: CropRegion) {
+    try {
+      await finishCompanionRegionSelection();
+      setRegionScaleFactor(null);
+      await capture('region', region);
+      setStatus('success');
+      setLastAction('region 截图已保存');
+    } catch {
+      setStatus('error');
+      setLastAction('');
+      setError('截图失败，请重试。');
+    }
+  }
+
+  async function cancelRegionCapture() {
+    try {
+      await finishCompanionRegionSelection();
+      setRegionScaleFactor(null);
+      setStatus('idle');
+      setLastAction('已取消区域截图');
+    } catch {
+      setError('无法恢复悬浮助手窗口，请重试。');
     }
   }
 
@@ -248,6 +291,16 @@ export function CompanionWindow({
     } catch {
       setError('无法隐藏悬浮助手。');
     }
+  }
+
+  if (regionScaleFactor !== null) {
+    return (
+      <RegionOverlay
+        scaleFactor={regionScaleFactor}
+        onSelect={(region) => void completeRegionCapture(region)}
+        onCancel={() => void cancelRegionCapture()}
+      />
+    );
   }
 
   return (

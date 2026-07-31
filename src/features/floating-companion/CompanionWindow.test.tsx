@@ -2,6 +2,8 @@ import '@testing-library/jest-dom/vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {
+  beginCompanionRegionSelection,
+  finishCompanionRegionSelection,
   focusMainWindow,
   getCompanionSettings,
   hideCompanion,
@@ -27,6 +29,8 @@ vi.mock('../../lib/companion', async () => {
     setCompanionExpanded: vi.fn(),
     focusMainWindow: vi.fn(),
     hideCompanion: vi.fn(),
+    beginCompanionRegionSelection: vi.fn(),
+    finishCompanionRegionSelection: vi.fn(),
     subscribeToCompanionSkinChanged: vi.fn(),
     subscribeToCompanionSettingsChanged: vi.fn(),
     saveCompanionPlacement: vi.fn(),
@@ -66,6 +70,8 @@ beforeEach(() => {
   vi.mocked(hideCompanion).mockResolvedValue({
     activeSkinId: 'quiet-aurora', motionEnabled: true, visible: false, placement: null,
   });
+  vi.mocked(beginCompanionRegionSelection).mockResolvedValue({ scaleFactor: 2 });
+  vi.mocked(finishCompanionRegionSelection).mockResolvedValue(undefined);
   vi.mocked(subscribeToCompanionSkinChanged).mockResolvedValue(vi.fn());
   vi.mocked(subscribeToCompanionSettingsChanged).mockResolvedValue(vi.fn());
   vi.mocked(capture).mockResolvedValue(undefined);
@@ -159,13 +165,27 @@ it('keeps capture and import failures recoverable', async () => {
   vi.mocked(capture).mockRejectedValueOnce(new Error('capture unavailable'));
   renderCompanion();
   await openMenu();
-  await userEvent.click(screen.getByRole('button', { name: '区域截图' }));
+  await userEvent.click(screen.getByRole('button', { name: '窗口截图' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('截图失败，请重试。');
 
   vi.mocked(selectImageFiles).mockResolvedValue(['C:\\images\\broken.png']);
   vi.mocked(importFiles).mockRejectedValueOnce(new Error('import unavailable'));
   await userEvent.click(screen.getByRole('button', { name: '导入图片' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('导入失败，请重新选择图片。');
+});
+
+it('selects a DPI-correct region before invoking region capture', async () => {
+  renderCompanion();
+  await openMenu();
+
+  await userEvent.click(screen.getByRole('button', { name: '区域截图' }));
+  const overlay = await screen.findByRole('dialog', { name: '选择截图区域' });
+  fireEvent(overlay, pointerEvent('pointerdown', { button: 0, clientX: 10, clientY: 15 }));
+  fireEvent(overlay, pointerEvent('pointermove', { buttons: 1, clientX: 50, clientY: 55 }));
+  fireEvent(overlay, pointerEvent('pointerup', { button: 0, clientX: 50, clientY: 55 }));
+
+  await waitFor(() => expect(finishCompanionRegionSelection).toHaveBeenCalledTimes(1));
+  expect(capture).toHaveBeenCalledWith('region', { x: 20, y: 30, width: 80, height: 80 });
 });
 
 function renderCompanion() {

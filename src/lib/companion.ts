@@ -73,6 +73,12 @@ export const focusMainWindow = () => invoke<void>('focus_main_window');
 export const setCompanionExpanded = (expanded: boolean) =>
   invoke<void>('set_companion_expanded', { expanded });
 
+export const beginCompanionRegionSelection = () =>
+  invoke<{ scaleFactor: number }>('begin_companion_region_selection');
+
+export const finishCompanionRegionSelection = () =>
+  invoke<void>('finish_companion_region_selection');
+
 export const saveCompanionPlacement = (placement: WindowPlacement) =>
   invoke<CompanionSettings>('save_companion_placement', { placement });
 

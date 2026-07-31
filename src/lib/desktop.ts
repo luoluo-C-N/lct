@@ -5,8 +5,15 @@ import type { SkinImportSelection } from './companion';
 
 export type CaptureMode = 'region' | 'window' | 'fullscreen';
 
-export function capture(mode: CaptureMode) {
-  return invoke('capture', { mode });
+export type CropRegion = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export function capture(mode: CaptureMode, region?: CropRegion) {
+  return invoke('capture', region ? { mode, region } : { mode });
 }
 
 export function importFiles(paths: string[]) {

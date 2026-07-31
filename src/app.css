@@ -155,3 +155,21 @@ body:has(.companion) #root { width: 100vw; height: 100vh; }
 @media (prefers-reduced-motion: reduce) {
   .companion-orb *, .companion-orb::before, .companion-orb::after { animation: none !important; }
 }
+.region-overlay {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  cursor: crosshair;
+  background: rgb(8 10 20 / 28%);
+  user-select: none;
+  touch-action: none;
+}
+
+.region-overlay__selection {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px solid #fff4dc;
+  background: rgb(189 159 255 / 14%);
+  box-shadow: 0 0 0 9999px rgb(3 4 12 / 40%), 0 0 16px rgb(189 159 255 / 65%);
+  pointer-events: none;
+}

@@ -4,7 +4,7 @@
 
 **Goal:** Make the companion's region capture action open a real display-sized selection overlay and pass a DPI-correct `CropRegion` to the existing Tauri capture command.
 
-**Architecture:** Reuse the existing `companion` native window instead of creating a third privileged window. A small Rust session state saves and restores the companion's physical bounds while the React `RegionOverlay` owns pointer selection and Escape cancellation; the selected logical rectangle is scaled to screenshot pixels before IPC.
+**Architecture:** Reuse the existing `companion` native window instead of creating a third privileged window. A small Rust session state saves and restores the companion's physical bounds while the React `RegionOverlay` covers the primary display, owns pointer selection and Escape cancellation, and scales the selected logical rectangle to screenshot pixels before IPC.
 
 **Tech Stack:** Tauri 2, Rust, React 19, TypeScript, Vitest, Testing Library.
 
@@ -38,11 +38,11 @@
 - Produces: `beginCompanionRegionSelection() -> Promise<{ scaleFactor: number }>` and `finishCompanionRegionSelection() -> Promise<void>`.
 - Consumes: `capture(mode: CaptureMode, region?: CropRegion)` and existing `capture(mode, region, app, repository)` IPC.
 
-- [ ] **Step 1: Write failing React and IPC wrapper tests**
+- [x] **Step 1: Write failing React and IPC wrapper tests**
 
 Assert that a normalized drag emits `{x,y,width,height}`, Escape cancels, a click without area does not capture, the companion begins/restores the native region session, and `capture('region', region)` invokes Tauri with both fields.
 
-- [ ] **Step 2: Run the focused tests and confirm RED**
+- [x] **Step 2: Run the focused tests and confirm RED**
 
 Run:
 
@@ -52,15 +52,15 @@ npm test -- RegionOverlay CompanionWindow companion
 
 Expected: fail because the overlay, wrapper parameter, and native session wrappers do not exist.
 
-- [ ] **Step 3: Implement the minimal React overlay and client contracts**
+- [x] **Step 3: Implement the minimal React overlay and client contracts**
 
 Render a full-window crosshair surface only during selection. Normalize reverse drags, reject zero width/height, multiply every coordinate by `scaleFactor`, round to integers, restore the native window before capture, and restore on Escape or errors.
 
-- [ ] **Step 4: Write failing Rust session tests**
+- [x] **Step 4: Write failing Rust session tests**
 
-Use an injected window adapter to prove begin stores the original physical bounds and covers the current monitor, finish restores exactly once, duplicate begin is rejected, and failed setup rolls back.
+Use an injected window adapter to prove begin stores the original physical bounds and covers the primary monitor, finish restores exactly once, duplicate begin is rejected, and failed setup rolls back.
 
-- [ ] **Step 5: Run the Rust tests and confirm RED**
+- [x] **Step 5: Run the Rust tests and confirm RED**
 
 Run:
 
@@ -70,11 +70,11 @@ cargo test --manifest-path src-tauri/Cargo.toml commands::companion_test -- --no
 
 Expected: fail because region selection state and commands do not exist.
 
-- [ ] **Step 6: Implement and register the native session commands**
+- [x] **Step 6: Implement and register the native session commands**
 
-Manage one mutex-protected saved physical bounds value. `begin_companion_region_selection` reads the companion's bounds, covers its current monitor, stores the prior bounds only after success, and returns the scale factor. `finish_companion_region_selection` restores the saved bounds and rejects calls without an active session.
+Manage one mutex-protected saved physical bounds value. `begin_companion_region_selection` reads the companion's bounds, covers the primary monitor used by region capture, stores the prior bounds only after success, and returns the scale factor. `finish_companion_region_selection` restores the saved bounds and rejects calls without an active session.
 
-- [ ] **Step 7: Run focused and complete tests**
+- [x] **Step 7: Run focused and complete tests**
 
 Run:
 
@@ -87,9 +87,11 @@ cargo test --manifest-path src-tauri/Cargo.toml
 
 Expected: all tests pass and the region action always carries a non-zero region.
 
-- [ ] **Step 8: Build, smoke, and commit**
+- [x] **Step 8: Build, smoke, and commit**
 
 Build the debug executable, verify selection and Escape restoration in the Windows app, then commit:
+
+The display-sized overlay and Escape restoration were verified on Windows. Automated drag-to-capture coverage passes; manual drag-and-save confirmation remains required because desktop user input interrupted the GUI automation attempt.
 
 ```powershell
 git add src src-tauri docs/superpowers/plans/2026-07-31-region-overlay-capture.md

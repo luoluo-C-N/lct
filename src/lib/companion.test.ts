@@ -3,6 +3,8 @@ import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  beginCompanionRegionSelection,
+  finishCompanionRegionSelection,
   importCompanionSkin,
   listCompanionSkins,
   setActiveCompanionSkin,
@@ -12,7 +14,7 @@ import {
   type CompanionSettings,
   type CompanionSkinState,
 } from './companion';
-import { selectCompanionSkinFile } from './desktop';
+import { capture, selectCompanionSkinFile } from './desktop';
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
@@ -50,6 +52,19 @@ describe('companion IPC adapter', () => {
     expect(invoke).toHaveBeenNthCalledWith(1, 'list_companion_skins');
     expect(invoke).toHaveBeenNthCalledWith(2, 'set_active_companion_skin', {
       skinId: 'deep-ink',
+    });
+  });
+
+  it('forwards the selected region and native selection session commands', async () => {
+    await beginCompanionRegionSelection();
+    await finishCompanionRegionSelection();
+    await capture('region', { x: 30, y: 45, width: 120, height: 75 });
+
+    expect(invoke).toHaveBeenNthCalledWith(1, 'begin_companion_region_selection');
+    expect(invoke).toHaveBeenNthCalledWith(2, 'finish_companion_region_selection');
+    expect(invoke).toHaveBeenNthCalledWith(3, 'capture', {
+      mode: 'region',
+      region: { x: 30, y: 45, width: 120, height: 75 },
     });
   });
 
