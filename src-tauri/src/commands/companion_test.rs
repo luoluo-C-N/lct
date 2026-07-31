@@ -13,8 +13,9 @@ use crate::{
     commands::companion::{
         anchored_companion_bounds, delete_companion_skin, handle_companion_close,
         handle_window_event, import_companion_skin, set_active_companion_skin,
-        set_known_window_visible, CompanionCommandError, CompanionSkinState,
+        set_known_window_visible, update_companion_skin, CompanionCommandError, CompanionSkinState,
     },
+    domain::companion::{CompanionSkin, SkinSource, VisualPreset},
     repository::companion::CompanionRepository,
 };
 
@@ -77,6 +78,84 @@ fn failed_set_delete_and_import_emit_no_skin_events() {
             .active_skin_id,
         "quiet-aurora"
     );
+}
+
+#[test]
+fn deleting_a_local_skin_removes_its_persisted_directory_and_record() {
+    let app = mock_app();
+    let skin_id = format!(
+        "delete-test-{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    );
+    let skin_directory = app
+        .path()
+        .app_local_data_dir()
+        .unwrap()
+        .join("skins")
+        .join(&skin_id);
+    fs::create_dir_all(&skin_directory).unwrap();
+    fs::write(skin_directory.join("texture.png"), b"texture").unwrap();
+    fs::write(skin_directory.join("preview.png"), b"preview").unwrap();
+    app.state::<CompanionRepository>()
+        .create_skin(&CompanionSkin {
+            id: skin_id.clone(),
+            name: "Delete me".to_owned(),
+            source: SkinSource::Image,
+            visual_preset: VisualPreset::Custom,
+            texture_path: Some(skin_directory.join("texture.png")),
+            preview_path: Some(skin_directory.join("preview.png")),
+            flow_colors: vec!["#BDA7FF".to_owned(), "#55D8CF".to_owned()],
+            flow_speed: 1.0,
+            flow_intensity: 0.7,
+            created_at: chrono::Utc::now(),
+        })
+        .unwrap();
+
+    delete_companion_skin(skin_id.clone(), app.handle().clone(), app.state()).unwrap();
+
+    assert!(!skin_directory.exists());
+    assert!(app
+        .state::<CompanionRepository>()
+        .list_skins()
+        .unwrap()
+        .iter()
+        .all(|skin| skin.id != skin_id));
+}
+
+#[test]
+fn updating_a_local_skin_preserves_managed_fields_and_clamps_motion() {
+    let app = mock_app();
+    let original = local_skin_fixture(&app, "update-test");
+    let mut unsafe_update = original.clone();
+    unsafe_update.texture_path = Some(std::env::temp_dir().join("outside.png"));
+    assert!(update_companion_skin(unsafe_update, app.handle().clone(), app.state()).is_err());
+    let stored = app
+        .state::<CompanionRepository>()
+        .list_skins()
+        .unwrap()
+        .into_iter()
+        .find(|skin| skin.id == original.id)
+        .unwrap();
+    assert_eq!(stored.texture_path, original.texture_path);
+
+    let mut safe_update = original.clone();
+    safe_update.name = "Updated".to_owned();
+    safe_update.flow_speed = 9.0;
+    safe_update.flow_intensity = -1.0;
+    let state = update_companion_skin(safe_update, app.handle().clone(), app.state()).unwrap();
+    let updated = state
+        .skins
+        .into_iter()
+        .find(|skin| skin.id == original.id)
+        .unwrap();
+    assert_eq!(updated.name, "Updated");
+    assert_eq!(updated.flow_speed, 2.0);
+    assert_eq!(updated.flow_intensity, 0.0);
+
+    fs::remove_dir_all(original.texture_path.unwrap().parent().unwrap()).unwrap();
 }
 
 #[test]
@@ -146,6 +225,41 @@ fn companion_close_handling_records_hidden_state_without_destroying_the_window()
             .unwrap()
             .visible
     );
+}
+
+fn local_skin_fixture(app: &tauri::App<tauri::test::MockRuntime>, label: &str) -> CompanionSkin {
+    let skin_id = format!(
+        "{label}-{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    );
+    let skin_directory = app
+        .path()
+        .app_local_data_dir()
+        .unwrap()
+        .join("skins")
+        .join(&skin_id);
+    fs::create_dir_all(&skin_directory).unwrap();
+    fs::write(skin_directory.join("texture.png"), b"texture").unwrap();
+    fs::write(skin_directory.join("preview.png"), b"preview").unwrap();
+    let skin = CompanionSkin {
+        id: skin_id,
+        name: label.to_owned(),
+        source: SkinSource::Image,
+        visual_preset: VisualPreset::Custom,
+        texture_path: Some(skin_directory.join("texture.png")),
+        preview_path: Some(skin_directory.join("preview.png")),
+        flow_colors: vec!["#BDA7FF".to_owned(), "#55D8CF".to_owned()],
+        flow_speed: 1.0,
+        flow_intensity: 0.7,
+        created_at: chrono::Utc::now(),
+    };
+    app.state::<CompanionRepository>()
+        .create_skin(&skin)
+        .unwrap();
+    skin
 }
 
 fn mock_app() -> tauri::App<tauri::test::MockRuntime> {

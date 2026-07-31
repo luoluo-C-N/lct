@@ -1,4 +1,8 @@
-use std::path::PathBuf;
+use std::{
+    fs,
+    path::PathBuf,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, LogicalPosition, LogicalRect, LogicalSize, Manager, Runtime, State};
@@ -43,6 +47,10 @@ pub enum CompanionCommandError {
     UnsupportedSkinFile(String),
     #[error("event emission failed: {0}")]
     Event(String),
+    #[error("skin file operation failed: {0}")]
+    Files(String),
+    #[error("invalid skin update: {0}")]
+    InvalidSkinUpdate(String),
 }
 
 impl From<CompanionRepositoryError> for CompanionCommandError {
@@ -100,12 +108,51 @@ pub fn import_companion_skin<R: Runtime>(
 
 #[tauri::command]
 pub fn update_companion_skin<R: Runtime>(
-    skin: CompanionSkin,
+    mut skin: CompanionSkin,
     app: tauri::AppHandle<R>,
     repository: State<'_, CompanionRepository>,
 ) -> Result<CompanionSkinState, CompanionCommandError> {
+    let existing = repository
+        .list_skins()?
+        .into_iter()
+        .find(|stored| stored.id == skin.id)
+        .ok_or_else(|| CompanionCommandError::Repository(format!("skin not found: {}", skin.id)))?;
+    if skin.source != existing.source
+        || skin.visual_preset != existing.visual_preset
+        || skin.texture_path != existing.texture_path
+        || skin.preview_path != existing.preview_path
+        || skin.created_at != existing.created_at
+    {
+        return Err(CompanionCommandError::InvalidSkinUpdate(
+            "managed skin fields cannot be changed".to_owned(),
+        ));
+    }
+    skin.name = skin.name.trim().to_owned();
+    if skin.name.is_empty() || skin.name.chars().count() > 48 {
+        return Err(CompanionCommandError::InvalidSkinUpdate(
+            "skin name must contain 1 to 48 characters".to_owned(),
+        ));
+    }
+    if skin.flow_colors.len() != 2 || skin.flow_colors.iter().any(|color| !is_hex_color(color)) {
+        return Err(CompanionCommandError::InvalidSkinUpdate(
+            "exactly two hexadecimal flow colors are required".to_owned(),
+        ));
+    }
+    if !skin.flow_speed.is_finite() || !skin.flow_intensity.is_finite() {
+        return Err(CompanionCommandError::InvalidSkinUpdate(
+            "motion values must be finite".to_owned(),
+        ));
+    }
+    skin.flow_speed = skin.flow_speed.clamp(0.5, 2.0);
+    skin.flow_intensity = skin.flow_intensity.clamp(0.0, 1.0);
     repository.update_skin(&skin)?;
     emit_skin_state(&app, &repository)
+}
+
+fn is_hex_color(value: &str) -> bool {
+    value.len() == 7
+        && value.starts_with('#')
+        && value.as_bytes()[1..].iter().all(u8::is_ascii_hexdigit)
 }
 
 #[tauri::command]
@@ -124,8 +171,58 @@ pub fn delete_companion_skin<R: Runtime>(
     app: tauri::AppHandle<R>,
     repository: State<'_, CompanionRepository>,
 ) -> Result<CompanionSkinState, CompanionCommandError> {
-    repository.delete_skin(&skin_id)?;
+    let skin = repository
+        .list_skins()?
+        .into_iter()
+        .find(|skin| skin.id == skin_id)
+        .ok_or_else(|| CompanionCommandError::Repository(format!("skin not found: {skin_id}")))?;
+    if skin.source == crate::domain::companion::SkinSource::Builtin {
+        repository.delete_skin(&skin_id)?;
+    } else {
+        delete_local_skin_files_and_record(&app, &repository, &skin)?;
+    }
     emit_skin_state(&app, &repository)
+}
+
+fn delete_local_skin_files_and_record<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    repository: &CompanionRepository,
+    skin: &CompanionSkin,
+) -> Result<(), CompanionCommandError> {
+    let skins_root = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|error| CompanionCommandError::Files(error.to_string()))?
+        .join("skins");
+    let expected_directory = skins_root.join(&skin.id);
+    let stored_directory = skin
+        .texture_path
+        .as_ref()
+        .and_then(|path| path.parent())
+        .ok_or_else(|| CompanionCommandError::Files("skin texture path is missing".to_owned()))?;
+    if stored_directory != expected_directory {
+        return Err(CompanionCommandError::Files(
+            "skin texture path is outside its managed directory".to_owned(),
+        ));
+    }
+
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| CompanionCommandError::Files(error.to_string()))?
+        .as_nanos();
+    let staged_directory = skins_root.join(format!(".{}.delete-{suffix}", skin.id));
+    fs::rename(&expected_directory, &staged_directory)
+        .map_err(|error| CompanionCommandError::Files(error.to_string()))?;
+    if let Err(error) = repository.delete_skin(&skin.id) {
+        fs::rename(&staged_directory, &expected_directory).map_err(|rollback_error| {
+            CompanionCommandError::Files(format!(
+                "{error}; restoring skin directory failed: {rollback_error}"
+            ))
+        })?;
+        return Err(error.into());
+    }
+    let _ = fs::remove_dir_all(staged_directory);
+    Ok(())
 }
 
 #[tauri::command]
