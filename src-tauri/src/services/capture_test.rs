@@ -40,7 +40,7 @@ fn crops_a_screenshot_to_the_requested_region() {
     let image = image::RgbaImage::from_fn(4, 3, |x, y| image::Rgba([x as u8, y as u8, 0, 255]));
 
     let cropped = crop_image(
-        image,
+        &image,
         CropRegion {
             x: 1,
             y: 1,

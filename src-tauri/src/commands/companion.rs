@@ -508,35 +508,18 @@ pub(crate) fn complete_region_selection_with<F>(
 where
     F: FnOnce(&Asset) -> Result<(), CompanionCommandError>,
 {
-    let session = {
-        let mut active = state.session.lock().map_err(|_| {
-            CompanionCommandError::Window("region selection state is unavailable".to_owned())
-        })?;
-        let original = active
-            .as_ref()
-            .map(|session| session.original_bounds)
-            .ok_or_else(|| {
-                CompanionCommandError::Window("region selection is not active".to_owned())
-            })?;
-        restore_region_window(window, original)?;
-        let ready = active
-            .as_ref()
-            .and_then(|session| session.image.as_ref())
-            .is_some();
-        if !ready {
-            return Err(CompanionCommandError::Capture(
-                "region selection setup did not complete".to_owned(),
-            ));
-        }
-        active.take().expect("active region session checked above")
-    };
-    let cropped = capture::crop_image(
-        session
-            .image
-            .expect("completed region session image checked above"),
-        region,
-    )
-    .map_err(|error| CompanionCommandError::Capture(error.to_string()))?;
+    let mut active = state.session.lock().map_err(|_| {
+        CompanionCommandError::Window("region selection state is unavailable".to_owned())
+    })?;
+    let session = active.as_ref().ok_or_else(|| {
+        CompanionCommandError::Window("region selection is not active".to_owned())
+    })?;
+    restore_region_window(window, session.original_bounds)?;
+    let image = session.image.as_ref().ok_or_else(|| {
+        CompanionCommandError::Capture("region selection setup did not complete".to_owned())
+    })?;
+    let cropped = capture::crop_image(image, region)
+        .map_err(|error| CompanionCommandError::Capture(error.to_string()))?;
     let asset = capture::persist_captured_pixels(
         cropped,
         capture::CaptureMode::Region,
@@ -545,6 +528,7 @@ where
     )
     .map_err(|error| CompanionCommandError::Capture(error.to_string()))?;
     emit_asset(&asset)?;
+    *active = None;
     Ok(asset)
 }
 

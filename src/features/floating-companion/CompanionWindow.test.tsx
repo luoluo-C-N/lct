@@ -225,6 +225,25 @@ it('leaves the collapsed companion recoverable when frozen completion fails', as
   expect(screen.getByRole('button', { name: '打开悬浮助手菜单' })).toBeVisible();
 });
 
+it('keeps the frozen session when completion and restoration both fail', async () => {
+  vi.mocked(completeCompanionRegionSelection).mockRejectedValueOnce(new Error('save failed'));
+  vi.mocked(cancelCompanionRegionSelection).mockRejectedValueOnce(new Error('restore failed'));
+  renderCompanion();
+  await openMenu();
+  await userEvent.click(screen.getByRole('button', { name: '区域截图' }));
+  const overlay = await screen.findByRole('dialog', { name: '选择截图区域' });
+  fireEvent(overlay, pointerEvent('pointerdown', { button: 0, clientX: 10, clientY: 15 }));
+  fireEvent(overlay, pointerEvent('pointerup', { button: 0, clientX: 50, clientY: 55 }));
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('无法恢复悬浮助手窗口，请重试。');
+  expect(screen.getByRole('dialog', { name: '选择截图区域' })).toBeVisible();
+
+  await userEvent.keyboard('{Escape}');
+
+  await waitFor(() => expect(cancelCompanionRegionSelection).toHaveBeenCalledTimes(2));
+  expect(screen.getByRole('button', { name: '打开悬浮助手菜单' })).toBeVisible();
+});
+
 it('retries native restoration when region setup fails after hiding the companion', async () => {
   vi.mocked(beginCompanionRegionSelection).mockRejectedValueOnce(new Error('setup failed'));
   renderCompanion();

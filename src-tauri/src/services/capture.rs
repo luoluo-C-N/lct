@@ -179,7 +179,7 @@ pub(crate) fn resolve_capture_target(
 }
 
 pub(crate) fn crop_image(
-    image: image::RgbaImage,
+    image: &image::RgbaImage,
     region: CropRegion,
 ) -> Result<image::RgbaImage, CaptureError> {
     let right = region
@@ -194,7 +194,7 @@ pub(crate) fn crop_image(
         return Err(CaptureError::InvalidCropRegion);
     }
     Ok(
-        image::imageops::crop_imm(&image, region.x, region.y, region.width, region.height)
+        image::imageops::crop_imm(image, region.x, region.y, region.width, region.height)
             .to_image(),
     )
 }
@@ -240,7 +240,8 @@ fn capture_target(target: CaptureTarget) -> Result<image::RgbaImage, CaptureErro
             let screenshot = primary
                 .capture()
                 .map_err(|error| CaptureError::Screenshot(error.to_string()))?;
-            crop_image(convert_screenshot_image(screenshot)?, region)
+            let screenshot = convert_screenshot_image(screenshot)?;
+            crop_image(&screenshot, region)
         }
         CaptureTarget::VirtualDesktopRegion(region) => {
             let origin_x = screens

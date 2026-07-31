@@ -490,7 +490,7 @@ fn invalid_region_restores_the_companion_without_emitting_or_persisting() {
 
     assert_eq!(emitted.load(Ordering::SeqCst), 0);
     assert_eq!(window.bounds().unwrap(), original);
-    assert!(cancel_region_selection_with(&window, &state).is_err());
+    cancel_region_selection_with(&window, &state).unwrap();
     assert!(repository
         .list_by_month(chrono::Utc::now().year(), chrono::Utc::now().month())
         .unwrap()
@@ -533,7 +533,7 @@ fn persistence_failure_restores_the_companion_without_emitting() {
 
     assert_eq!(emitted.load(Ordering::SeqCst), 0);
     assert_eq!(window.bounds().unwrap(), original);
-    assert!(cancel_region_selection_with(&window, &state).is_err());
+    cancel_region_selection_with(&window, &state).unwrap();
     fs::remove_dir_all(temporary_directory).unwrap();
 }
 

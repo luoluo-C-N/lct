@@ -241,20 +241,21 @@ export function CompanionWindow({
   }
 
   async function completeRegionCapture(region: CropRegion) {
-    setRegionSession(null);
     try {
       await completeCompanionRegionSelection(region);
+      setRegionSession(null);
       setStatus('success');
       setLastAction('region 截图已保存');
     } catch {
       try {
         await cancelCompanionRegionSelection();
+        setRegionSession(null);
+        setError('截图失败，请重试。');
       } catch {
-        // Completion failures after native restoration have no active session to cancel.
+        setError('无法恢复悬浮助手窗口，请重试。');
       }
       setStatus('error');
       setLastAction('');
-      setError('截图失败，请重试。');
     }
   }
 
