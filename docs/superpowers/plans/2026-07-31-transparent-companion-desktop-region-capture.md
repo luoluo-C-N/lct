@@ -36,7 +36,7 @@
 - Produces: `data-window="companion"` on the document root before React renders.
 - Preserves: existing `Root windowLabel` routing and main-window background.
 
-- [ ] **Step 1: Write failing frontend and Rust contract tests**
+- [x] **Step 1: Write failing frontend and Rust contract tests**
 
 Add a Vitest case that calls `markWindowDocument('companion', element)` and expects `element.dataset.window === 'companion'`, plus a main-window case. Extend `config_declares_a_safe_companion_window` with:
 
@@ -44,7 +44,7 @@ Add a Vitest case that calls `markWindowDocument('companion', element)` and expe
 assert_eq!(companion.shadow, Some(false));
 ```
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 Run:
 
@@ -55,7 +55,7 @@ cargo test --manifest-path src-tauri/Cargo.toml config_declares_a_safe_companion
 
 Expected: frontend import is missing and Tauri config shadow is not explicitly disabled.
 
-- [ ] **Step 3: Implement the transparent document contract**
+- [x] **Step 3: Implement the transparent document contract**
 
 Implement:
 
@@ -75,7 +75,7 @@ html[data-window="companion"] #root { background: transparent; }
 
 Set `"shadow": false` on the `companion` Tauri window only.
 
-- [ ] **Step 4: Verify GREEN and commit**
+- [x] **Step 4: Verify GREEN and commit**
 
 Run both focused tests, then:
 
@@ -101,11 +101,11 @@ git commit -m "fix: remove companion window frame"
 - Produces: `persist_captured_pixels(RgbaImage, CaptureMode, &Path, &AssetRepository) -> Result<Asset, CaptureError>`.
 - Preserves: existing fullscreen, region, and foreground-window capture behavior.
 
-- [ ] **Step 1: Write failing service tests**
+- [x] **Step 1: Write failing service tests**
 
 Add literal-pixel tests proving that `encode_png_data_url` starts with `data:image/png;base64,` and decodes to the source dimensions/pixel, and that `persist_captured_pixels` creates a region asset while removing its temporary capture file. Add a fake `ScreenCapturer` test proving one call returns the supplied image.
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 Run:
 
@@ -115,11 +115,11 @@ cargo test --manifest-path src-tauri/Cargo.toml services::capture_test -- --noca
 
 Expected: the new trait and helpers do not exist.
 
-- [ ] **Step 3: Implement the minimal snapshot primitives**
+- [x] **Step 3: Implement the minimal snapshot primitives**
 
 Add direct dependency `base64 = "0.22"`. Move primary-display lookup/capture behind `ScreenshotCapturer`, encode PNG with `image::codecs::png::PngEncoder`, and make existing `capture_target` reuse the adapter for primary fullscreen/region capture where possible. Persist pixels through a unique `capture-{new_asset_id()}.png` temporary path and existing `persist_captured_image` cleanup.
 
-- [ ] **Step 4: Verify GREEN, full Rust regression, and commit**
+- [x] **Step 4: Verify GREEN, full Rust regression, and commit**
 
 Run:
 
@@ -148,7 +148,7 @@ git commit -m "refactor: add reusable screen snapshots"
 - Replaces: `finish_companion_region_selection`.
 - Consumes: Task 2 `ScreenCapturer`, `encode_png_data_url`, and `persist_captured_pixels`.
 
-- [ ] **Step 1: Write failing lifecycle tests**
+- [x] **Step 1: Write failing lifecycle tests**
 
 Extend the fake window with visible state and an operation log. Inject a fake capturer and assert this exact successful prefix:
 
@@ -158,7 +158,7 @@ bounds -> monitor_bounds -> scale_factor -> hide -> capture -> set_monitor_bound
 
 Assert a second begin is rejected and capture count remains one. Assert capture, resize, show, and focus failures restore the original bounds/visibility and leave no active session.
 
-- [ ] **Step 2: Run lifecycle tests and verify RED**
+- [x] **Step 2: Run lifecycle tests and verify RED**
 
 Run:
 
@@ -168,15 +168,15 @@ cargo test --manifest-path src-tauri/Cargo.toml commands::companion_test::region
 
 Expected: the current window adapter cannot hide/show/focus or retain pixels.
 
-- [ ] **Step 3: Implement begin and cancel session behavior**
+- [x] **Step 3: Implement begin and cancel session behavior**
 
 Store a `RegionCaptureSession` containing original bounds and `RgbaImage` under the existing mutex. `begin` hides before capture, stores only after capture and preview encoding succeed, then covers/shows/focuses the window. Roll back bounds and visibility on every setup error. `cancel` restores first and clears only after restoration succeeds.
 
-- [ ] **Step 4: Write failing completion and event tests**
+- [x] **Step 4: Write failing completion and event tests**
 
 Using a 4x4 literal image, complete a 2x2 crop and inspect the persisted original pixels. Assert `capture_mode == Some(CaptureMode::Region)`, the session is empty, and exactly one `asset-created` payload equals the returned asset. Add invalid-region, persistence-error, cancellation, and restore-error cases proving zero events; restore error must keep the session available for retry.
 
-- [ ] **Step 5: Run completion tests and verify RED**
+- [x] **Step 5: Run completion tests and verify RED**
 
 Run:
 
@@ -187,11 +187,11 @@ cargo test --manifest-path src-tauri/Cargo.toml frozen_region -- --nocapture
 
 Expected: complete/cancel commands and event behavior are missing.
 
-- [ ] **Step 6: Implement completion commands and registration**
+- [x] **Step 6: Implement completion commands and registration**
 
 Restore bounds and visibility before taking the session image. Validate/crop/persist through Task 2 helpers, emit only after persistence, and clear the session on all post-restore results. Register `complete_companion_region_selection` and `cancel_companion_region_selection` in `main.rs`; remove the old finish command.
 
-- [ ] **Step 7: Verify GREEN, full Rust regression, and commit**
+- [x] **Step 7: Verify GREEN, full Rust regression, and commit**
 
 Run:
 
@@ -221,11 +221,11 @@ git commit -m "fix: capture frozen desktop regions"
 - Produces: `cancelCompanionRegionSelection() -> Promise<void>`.
 - Changes: `RegionOverlay` requires `previewDataUrl` and renders the frozen frame beneath selection chrome.
 
-- [ ] **Step 1: Write failing IPC and overlay tests**
+- [x] **Step 1: Write failing IPC and overlay tests**
 
 Assert literal invoke payloads for begin, complete, and cancel. Render `RegionOverlay` with `data:image/png;base64,fixture` and assert the image has accessible name `截图冻结画面` and that reverse drag still emits the hand-calculated physical region.
 
-- [ ] **Step 2: Run focused tests and verify RED**
+- [x] **Step 2: Run focused tests and verify RED**
 
 Run:
 
@@ -235,15 +235,15 @@ npm test -- companion RegionOverlay
 
 Expected: complete/cancel wrappers and preview prop are missing.
 
-- [ ] **Step 3: Implement frontend contracts and preview**
+- [x] **Step 3: Implement frontend contracts and preview**
 
 Replace finish wrapper with complete/cancel wrappers. Render the preview as a non-draggable image filling the overlay; keep selection chrome above it and pointer events on the dialog surface.
 
-- [ ] **Step 4: Write failing companion workflow tests**
+- [x] **Step 4: Write failing companion workflow tests**
 
 Assert region start displays the begin response preview, completing calls only `completeCompanionRegionSelection(region)` and never general `capture`, Escape calls cancel exactly once, and complete/cancel errors leave the collapsed companion usable with `role="alert"` feedback.
 
-- [ ] **Step 5: Run workflow tests and verify RED**
+- [x] **Step 5: Run workflow tests and verify RED**
 
 Run:
 
@@ -253,11 +253,11 @@ npm test -- CompanionWindow
 
 Expected: current workflow restores then performs a second live capture.
 
-- [ ] **Step 6: Implement the frozen frontend workflow**
+- [x] **Step 6: Implement the frozen frontend workflow**
 
 Store the complete region session instead of only its scale factor. On selection, clear overlay state and call complete. On Escape, clear overlay state and call cancel. Do not call `capture('region', region)`. Ensure error paths cannot trigger duplicate cancellation during unmount or rerender.
 
-- [ ] **Step 7: Verify GREEN, full frontend regression, and commit**
+- [x] **Step 7: Verify GREEN, full frontend regression, and commit**
 
 Run:
 
@@ -282,7 +282,7 @@ git commit -m "fix: show frozen desktop during region capture"
 - Documents: exact commits, automated counts, and remaining/manual Windows evidence.
 - Produces: an offline Git bundle containing the final branch.
 
-- [ ] **Step 1: Run the complete verification matrix**
+- [x] **Step 1: Run the complete verification matrix**
 
 Run:
 
@@ -296,11 +296,11 @@ npm run tauri -- build --debug --no-bundle
 
 Expected: every command exits 0 with no failing tests.
 
-- [ ] **Step 2: Perform Windows smoke checks**
+- [x] **Step 2: Perform Windows smoke checks**
 
 Launch the debug executable and verify: collapsed corners are transparent; region mode shows desktop and other apps as a frozen frame; a saved crop excludes the orb/overlay; Escape restores the exact orb position. Record any check that cannot be completed instead of claiming it passed.
 
-- [ ] **Step 3: Update handoff records and commit**
+- [x] **Step 3: Update handoff records and commit**
 
 Mark completed plan checkboxes, update `docs/CONTINUATION.md` with fresh counts and smoke evidence, then:
 

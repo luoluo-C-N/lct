@@ -2,13 +2,14 @@
 
 Updated: 2026-07-31
 
-Status: **The local MVP and floating companion skin library Tasks 1-8 are implemented. Automated verification is green; the remaining Windows checks are listed explicitly below.**
+Status: **The local MVP, floating companion skin library, transparent companion, and frozen desktop region capture are implemented. Automated verification is green; the remaining Windows checks are listed explicitly below.**
 
 ## Repository State
 
 - Repository: `https://github.com/luoluo-C-N/lct.git`
 - Branch: `feat/magic-image-library`
-- Latest implementation commit: `c89e85b` (`fix: select a real screenshot region`)
+- Latest implementation commit: `7b8e241` (`fix: serialize region overlay actions`)
+- Frozen region capture commits: `83d9966`, `c4b66fa`, `76b5982`, `29cad98`, `785c2fb`, `b2253ec`, `43bcefb`, `76e2275`, `b1540d1`, `2e7f60f`, `7b8e241`.
 - Skin edit race fix: `8a8d3fa` (`fix: preserve unsaved skin edits on refresh`)
 - Asset repository state fix: `6eca1cf` (`fix: register asset repository state`)
 - The final handoff commit is the commit containing this file; run `git log -1 --oneline --decorate` after pulling.
@@ -27,7 +28,9 @@ Status: **The local MVP and floating companion skin library Tasks 1-8 are implem
 - Versioned ZIP skin packages with traversal, absolute path, symlink, directory, unknown entry, unreferenced entry, remote URL, entry count, manifest size, compressed size, uncompressed size, dimensions, allocation, color, and motion validation.
 - Main skin library for import, activation, rename, motion controls, and deletion; built-ins and active skins remain protected.
 - Repository states are registered on the Tauri AppHandle, fixing the production `state not managed for field repository` IPC failure.
-- Region capture now uses a display-sized `RegionOverlay`, DPI-correct `CropRegion`, and a native session that restores companion bounds on selection or Escape.
+- The collapsed companion document and native window are transparent through `html`, `body`, and `#root`, with the native shadow disabled so only the orb is visible.
+- QQ/WeChat-style region capture hides the companion, takes one primary-display snapshot, shows that frozen desktop frame during selection, and crops the same retained pixels without recapturing.
+- Frozen region sessions use primary-monitor DPI conversion, restore the companion before persistence, emit `asset-created` exactly once after success, and remain recoverable after setup, completion, cancellation, restoration, or partial-file failures.
 
 ## Security Decisions
 
@@ -48,10 +51,10 @@ cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 # exit 0
 
 npm test
-# 12 files, 61 tests passed
+# 13 files, 71 tests passed
 
 cargo test --manifest-path src-tauri/Cargo.toml
-# 71 passed, 0 failed
+# 82 passed, 0 failed
 
 npm run build
 # TypeScript and Vite build succeeded
@@ -78,10 +81,11 @@ Verified in the real debug executable:
 - Companion hide persists across restart; the main window restores it and updates its visibility button.
 - Region capture opens a primary-display-sized selection overlay; Escape restores the exact companion window and reports cancellation.
 - Main/companion focus behavior and always-on-top placement were visually observed.
+- The collapsed companion was launched from the current debug build and desktop content remained visible around the orb; no black rectangular webview/native frame was visible.
 
 Manual verification required:
 
-- Complete a real region drag and confirm the cropped asset appears. GUI automation was interrupted by user input before the drag completed; automated React/Rust coverage passes.
+- Complete a real region drag and confirm the frozen desktop preview and cropped asset. The Windows automation tool could not activate/click the 72x72 borderless always-on-top companion, so this drag was not completed. Automated coverage verifies frozen preview rendering, same-frame cropping, DPI conversion, event count, cancellation, and retry/recovery behavior.
 - Exercise fullscreen and foreground-window capture end to end on the target monitor/window.
 - Drag the companion, restart, and confirm placement persistence and edge-aware expansion at multiple screen edges.
 - Verify companion close hides, main close exits, and show/hide behavior across all close paths.
@@ -92,7 +96,7 @@ Manual verification required:
 ## Known Residuals
 
 - If a Tauri event emit fails after a database/filesystem commit, the command returns an error but does not roll back the committed asset or skin. There is no transaction spanning SQLite, filesystem, and the event bus.
-- Region selection currently covers the primary display because the existing region capture backend crops the primary display screenshot.
+- Frozen region selection currently covers the primary display only; multi-display selection remains future work.
 - The `.app` bundle identifier warning remains.
 - Community upload, direct external skin references, executable/programmatic skins, accounts, cloud sync, installers, signing, updates, and product-grade annotation remain future work and require new specifications.
 
@@ -109,6 +113,8 @@ npm run tauri -- dev
 
 Read this file first, then:
 
+- `docs/superpowers/specs/2026-07-31-transparent-companion-desktop-region-capture-design.md`
+- `docs/superpowers/plans/2026-07-31-transparent-companion-desktop-region-capture.md`
 - `docs/superpowers/specs/2026-07-30-floating-companion-skin-library-design.md`
 - `docs/superpowers/plans/2026-07-30-floating-companion-skin-library.md`
 - `docs/superpowers/plans/2026-07-31-region-overlay-capture.md`
