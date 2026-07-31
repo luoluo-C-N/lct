@@ -281,19 +281,24 @@ pub fn anchored_companion_bounds(
     } else {
         COLLAPSED_SIZE
     };
+    let current_size = if expanded {
+        COLLAPSED_SIZE
+    } else {
+        EXPANDED_SIZE
+    };
     let monitor_right = monitor.position.x + monitor.size.width;
     let monitor_bottom = monitor.position.y + monitor.size.height;
     let anchor_right =
-        current.x + COLLAPSED_SIZE.width / 2.0 >= monitor.position.x + monitor.size.width / 2.0;
+        current.x + current_size.width / 2.0 >= monitor.position.x + monitor.size.width / 2.0;
     let anchor_bottom =
-        current.y + COLLAPSED_SIZE.height / 2.0 >= monitor.position.y + monitor.size.height / 2.0;
+        current.y + current_size.height / 2.0 >= monitor.position.y + monitor.size.height / 2.0;
     let x = if anchor_right {
-        current.x + COLLAPSED_SIZE.width - target.width
+        current.x + current_size.width - target.width
     } else {
         current.x
     };
     let y = if anchor_bottom {
-        current.y + COLLAPSED_SIZE.height - target.height
+        current.y + current_size.height - target.height
     } else {
         current.y
     };

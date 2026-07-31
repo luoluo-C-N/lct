@@ -104,6 +104,21 @@ fn expansion_anchors_to_the_nearest_monitor_edges() {
 }
 
 #[test]
+fn collapsing_restores_the_orb_position_after_right_bottom_expansion() {
+    let monitor = LogicalRect {
+        position: LogicalPosition::new(0.0, 0.0),
+        size: LogicalSize::new(1000.0, 800.0),
+    };
+    let collapsed_position = LogicalPosition::new(900.0, 700.0);
+    let (expanded_position, _) = anchored_companion_bounds(collapsed_position, monitor, true);
+
+    let (restored_position, size) = anchored_companion_bounds(expanded_position, monitor, false);
+
+    assert_eq!(size, LogicalSize::new(72.0, 72.0));
+    assert_eq!(restored_position, collapsed_position);
+}
+
+#[test]
 fn expansion_clamps_a_partially_offscreen_companion_to_the_work_area() {
     let monitor = LogicalRect {
         position: LogicalPosition::new(-1280.0, 0.0),

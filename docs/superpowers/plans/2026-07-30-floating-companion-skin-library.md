@@ -677,7 +677,7 @@ git commit -m "feat: add local skin library"
 - Consumes: `SkinPreview` visual tokens and Task 5 client/window wrappers.
 - Produces collapsed orb, anchored expanded menu, drag persistence, quick switching, status motion, and accessible keyboard behavior.
 
-- [ ] **Step 1: Write failing window interaction tests**
+- [x] **Step 1: Write failing window interaction tests**
 
 ```tsx
 it('expands, restores focus on Escape, and requests anchored native resize', async () => {
@@ -699,7 +699,7 @@ it('starts native dragging only from the orb drag handle', async () => {
 
 Also test quick skin switch, show main, hide companion, import/capture statuses, placement debounce, subscription cleanup, and failed actions.
 
-- [ ] **Step 2: Write failing visual token and reduced-motion tests**
+- [x] **Step 2: Write failing visual token and reduced-motion tests**
 
 ```tsx
 it.each([
@@ -714,7 +714,7 @@ it.each([
 
 Assert the DOM has two arc runners, one surface current, five star points, and a central star. With motion disabled, the root has `companion-orb--motion-off`.
 
-- [ ] **Step 3: Run focused tests and confirm RED**
+- [x] **Step 3: Run focused tests and confirm RED**
 
 ```powershell
 npm test -- CompanionOrb CompanionWindow useCompanionPosition
@@ -722,11 +722,11 @@ npm test -- CompanionOrb CompanionWindow useCompanionPosition
 
 Expected: fail because the new orb and window APIs do not exist.
 
-- [ ] **Step 4: Implement semantic structure and window behavior**
+- [x] **Step 4: Implement semantic structure and window behavior**
 
 The trigger exposes `aria-haspopup="menu"` and `aria-expanded`. Expanded content has labelled quick skin buttons and actions. Escape collapses and restores focus. Pointer dragging ignores non-primary buttons and interactive menu descendants. Position events debounce for `250 ms` before calling `saveCompanionPlacement`.
 
-- [ ] **Step 5: Implement the approved animated baseline**
+- [x] **Step 5: Implement the approved animated baseline**
 
 CSS must provide:
 
@@ -762,7 +762,7 @@ Define separate variables and material backgrounds under:
 
 Under `@media (prefers-reduced-motion: reduce)` and `.companion-orb--motion-off`, set every animation to `none`.
 
-- [ ] **Step 6: Run companion, skin, and main-window tests**
+- [x] **Step 6: Run companion, skin, and main-window tests**
 
 ```powershell
 npm test -- CompanionOrb CompanionWindow useCompanionPosition SkinLibrary App Root
@@ -770,7 +770,7 @@ npm test -- CompanionOrb CompanionWindow useCompanionPosition SkinLibrary App Ro
 
 Expected: all pass, including existing import and capture error recovery.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```powershell
 git add src/features/floating-companion src/app.css
