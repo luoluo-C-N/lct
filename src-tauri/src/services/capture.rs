@@ -1,5 +1,7 @@
 use std::{fs, path::Path};
 
+use base64::Engine;
+use image::ImageEncoder;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -41,6 +43,28 @@ pub trait WindowLocator: Send + Sync {
 }
 
 pub struct Win32WindowLocator;
+
+pub trait ScreenCapturer: Send + Sync {
+    fn capture_primary(&self) -> Result<image::RgbaImage, CaptureError>;
+}
+
+pub struct ScreenshotCapturer;
+
+impl ScreenCapturer for ScreenshotCapturer {
+    fn capture_primary(&self) -> Result<image::RgbaImage, CaptureError> {
+        let screens = screenshots::Screen::all()
+            .map_err(|error| CaptureError::Screenshot(error.to_string()))?;
+        let primary = screens
+            .iter()
+            .find(|screen| screen.display_info.is_primary)
+            .or_else(|| screens.first())
+            .ok_or_else(|| CaptureError::Screenshot("no display is available".to_owned()))?;
+        let screenshot = primary
+            .capture()
+            .map_err(|error| CaptureError::Screenshot(error.to_string()))?;
+        convert_screenshot_image(screenshot)
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CaptureTarget {
@@ -154,7 +178,6 @@ pub(crate) fn resolve_capture_target(
     }
 }
 
-#[cfg(test)]
 pub(crate) fn crop_image(
     image: image::RgbaImage,
     region: CropRegion,
@@ -195,18 +218,14 @@ pub fn capture(
 ) -> Result<Asset, CaptureError> {
     let target = resolve_capture_target(mode, region, window_locator)?;
     let screenshot = capture_target(target)?;
-
-    let captures_directory = data_directory.join("assets").join("captures");
-    fs::create_dir_all(&captures_directory)?;
-    let source_path = captures_directory.join(format!("capture-{}.png", new_asset_id()));
-    screenshot
-        .save(&source_path)
-        .map_err(|error| CaptureError::Screenshot(error.to_string()))?;
-
-    persist_captured_image(&source_path, mode, data_directory, repository)
+    persist_captured_pixels(screenshot, mode, data_directory, repository)
 }
 
-fn capture_target(target: CaptureTarget) -> Result<screenshots::image::RgbaImage, CaptureError> {
+fn capture_target(target: CaptureTarget) -> Result<image::RgbaImage, CaptureError> {
+    if matches!(target, CaptureTarget::Fullscreen) {
+        return ScreenshotCapturer.capture_primary();
+    }
+
     let screens =
         screenshots::Screen::all().map_err(|error| CaptureError::Screenshot(error.to_string()))?;
     let primary = screens
@@ -216,36 +235,12 @@ fn capture_target(target: CaptureTarget) -> Result<screenshots::image::RgbaImage
         .ok_or_else(|| CaptureError::Screenshot("no display is available".to_owned()))?;
 
     match target {
-        CaptureTarget::Fullscreen => primary
-            .capture()
-            .map_err(|error| CaptureError::Screenshot(error.to_string())),
+        CaptureTarget::Fullscreen => unreachable!("fullscreen capture returned above"),
         CaptureTarget::PrimaryRegion(region) => {
             let screenshot = primary
                 .capture()
                 .map_err(|error| CaptureError::Screenshot(error.to_string()))?;
-            let right = region
-                .x
-                .checked_add(region.width)
-                .ok_or(CaptureError::InvalidCropRegion)?;
-            let bottom = region
-                .y
-                .checked_add(region.height)
-                .ok_or(CaptureError::InvalidCropRegion)?;
-            if region.width == 0
-                || region.height == 0
-                || right > screenshot.width()
-                || bottom > screenshot.height()
-            {
-                return Err(CaptureError::InvalidCropRegion);
-            }
-            Ok(screenshots::image::imageops::crop_imm(
-                &screenshot,
-                region.x,
-                region.y,
-                region.width,
-                region.height,
-            )
-            .to_image())
+            crop_image(convert_screenshot_image(screenshot)?, region)
         }
         CaptureTarget::VirtualDesktopRegion(region) => {
             let origin_x = screens
@@ -274,16 +269,57 @@ fn capture_target(target: CaptureTarget) -> Result<screenshots::image::RgbaImage
                         && i64::from(virtual_y) < i64::from(info.y) + i64::from(info.height)
                 })
                 .ok_or(CaptureError::InvalidCropRegion)?;
-            screen
+            let screenshot = screen
                 .capture_area(
                     virtual_x - screen.display_info.x,
                     virtual_y - screen.display_info.y,
                     region.width,
                     region.height,
                 )
-                .map_err(|error| CaptureError::Screenshot(error.to_string()))
+                .map_err(|error| CaptureError::Screenshot(error.to_string()))?;
+            convert_screenshot_image(screenshot)
         }
     }
+}
+
+fn convert_screenshot_image(
+    screenshot: screenshots::image::RgbaImage,
+) -> Result<image::RgbaImage, CaptureError> {
+    let (width, height) = screenshot.dimensions();
+    image::RgbaImage::from_raw(width, height, screenshot.into_raw()).ok_or_else(|| {
+        CaptureError::Screenshot("captured screen pixels have an invalid size".to_owned())
+    })
+}
+
+pub(crate) fn encode_png_data_url(image: &image::RgbaImage) -> Result<String, CaptureError> {
+    let mut bytes = Vec::new();
+    image::codecs::png::PngEncoder::new(&mut bytes)
+        .write_image(
+            image.as_raw(),
+            image.width(),
+            image.height(),
+            image::ExtendedColorType::Rgba8,
+        )
+        .map_err(|error| CaptureError::Screenshot(error.to_string()))?;
+    Ok(format!(
+        "data:image/png;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    ))
+}
+
+pub(crate) fn persist_captured_pixels(
+    image: image::RgbaImage,
+    mode: CaptureMode,
+    data_directory: &Path,
+    repository: &AssetRepository,
+) -> Result<Asset, CaptureError> {
+    let captures_directory = data_directory.join("assets").join("captures");
+    fs::create_dir_all(&captures_directory)?;
+    let source_path = captures_directory.join(format!("capture-{}.png", new_asset_id()));
+    image
+        .save(&source_path)
+        .map_err(|error| CaptureError::Screenshot(error.to_string()))?;
+    persist_captured_image(&source_path, mode, data_directory, repository)
 }
 
 pub(crate) fn persist_captured_image(

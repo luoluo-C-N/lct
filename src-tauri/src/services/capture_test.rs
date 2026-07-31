@@ -4,14 +4,16 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use base64::Engine;
 use rusqlite::Connection;
 
 use crate::{
     domain::asset::AssetSource,
     repository::assets::AssetRepository,
     services::capture::{
-        crop_image, normalize_window_region, resolve_capture_target, validate_region, CaptureError,
-        CaptureMode, CaptureTarget, CropRegion, WindowLocator,
+        crop_image, encode_png_data_url, normalize_window_region, persist_captured_pixels,
+        resolve_capture_target, validate_region, CaptureError, CaptureMode, CaptureTarget,
+        CropRegion, WindowLocator,
     },
 };
 
@@ -133,6 +135,42 @@ fn capture_persistence_removes_temporary_image_after_creating_asset() {
     assert!(!source_path.exists());
     assert!(asset.original_path.exists());
     assert_eq!(asset.source, AssetSource::Capture);
+    assert_eq!(asset.capture_mode, Some(CaptureMode::Region));
+
+    fs::remove_dir_all(temporary_directory).unwrap();
+}
+
+#[test]
+fn encodes_the_snapshot_preview_from_the_original_pixels() {
+    let image = image::RgbaImage::from_pixel(2, 1, image::Rgba([17, 34, 51, 255]));
+
+    let data_url = encode_png_data_url(&image).unwrap();
+
+    let encoded = data_url
+        .strip_prefix("data:image/png;base64,")
+        .expect("PNG data URL prefix");
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .unwrap();
+    let decoded = image::load_from_memory(&bytes).unwrap().into_rgba8();
+    assert_eq!(decoded.dimensions(), (2, 1));
+    assert_eq!(decoded.get_pixel(1, 0), &image::Rgba([17, 34, 51, 255]));
+}
+
+#[test]
+fn persists_in_memory_pixels_as_a_region_capture_asset() {
+    let temporary_directory = temporary_directory();
+    let data_directory = temporary_directory.join("app-data");
+    let repository =
+        AssetRepository::from_connection(Connection::open_in_memory().unwrap()).unwrap();
+    let image = image::RgbaImage::from_pixel(2, 2, image::Rgba([90, 80, 70, 255]));
+
+    let asset =
+        persist_captured_pixels(image, CaptureMode::Region, &data_directory, &repository).unwrap();
+
+    let persisted = image::open(&asset.original_path).unwrap().into_rgba8();
+    assert_eq!(persisted.dimensions(), (2, 2));
+    assert_eq!(persisted.get_pixel(0, 0), &image::Rgba([90, 80, 70, 255]));
     assert_eq!(asset.capture_mode, Some(CaptureMode::Region));
 
     fs::remove_dir_all(temporary_directory).unwrap();
