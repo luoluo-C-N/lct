@@ -47,6 +47,20 @@ it('cancels on Escape and ignores a zero-area click', async () => {
   expect(onCancel).toHaveBeenCalledTimes(1);
 });
 
+it('shows a recoverable native restore error inside the active overlay', () => {
+  render(
+    <RegionOverlay
+      scaleFactor={1}
+      previewDataUrl="data:image/png;base64,fixture"
+      error="无法恢复悬浮助手窗口，请重试。"
+      onSelect={vi.fn()}
+      onCancel={vi.fn()}
+    />,
+  );
+
+  expect(screen.getByRole('alert')).toHaveTextContent('无法恢复悬浮助手窗口，请重试。');
+});
+
 function pointerEvent(type: string, properties: Record<string, number>) {
   const event = new Event(type, { bubbles: true });
   Object.entries(properties).forEach(([name, value]) => {

@@ -6,6 +6,7 @@ type Point = { x: number; y: number };
 type RegionOverlayProps = {
   scaleFactor: number;
   previewDataUrl: string;
+  error?: string;
   onSelect: (region: CropRegion) => void;
   onCancel: () => void;
 };
@@ -13,6 +14,7 @@ type RegionOverlayProps = {
 export function RegionOverlay({
   scaleFactor,
   previewDataUrl,
+  error,
   onSelect,
   onCancel,
 }: RegionOverlayProps) {
@@ -77,6 +79,7 @@ export function RegionOverlay({
         alt="截图冻结画面"
         draggable={false}
       />
+      {error && <p className="region-overlay__alert" role="alert">{error}</p>}
       {selection && (
         <span
           className="region-overlay__selection"

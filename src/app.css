@@ -176,6 +176,18 @@ body:has(.companion) #root { width: 100vw; height: 100vh; }
   user-select: none;
 }
 
+.region-overlay__alert {
+  position: absolute;
+  inset: 18px 18px auto;
+  z-index: 2;
+  margin: 0;
+  border-left: 3px solid #d98f9b;
+  padding: 8px 12px;
+  background: #171824e8;
+  color: #ffd7dc;
+  pointer-events: none;
+}
+
 .region-overlay__selection {
   position: absolute;
   box-sizing: border-box;

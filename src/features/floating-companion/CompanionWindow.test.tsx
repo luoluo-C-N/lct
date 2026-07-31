@@ -225,7 +225,7 @@ it('leaves the collapsed companion recoverable when frozen completion fails', as
   expect(screen.getByRole('button', { name: '打开悬浮助手菜单' })).toBeVisible();
 });
 
-it('reports a native restore failure after leaving the selection overlay', async () => {
+it('keeps the selection session available to retry a failed native restore', async () => {
   vi.mocked(cancelCompanionRegionSelection).mockRejectedValueOnce(new Error('restore failed'));
   renderCompanion();
   await openMenu();
@@ -236,6 +236,11 @@ it('reports a native restore failure after leaving the selection overlay', async
 
   expect(await screen.findByRole('alert')).toHaveTextContent('无法恢复悬浮助手窗口，请重试。');
   expect(cancelCompanionRegionSelection).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole('dialog', { name: '选择截图区域' })).toBeVisible();
+
+  await userEvent.keyboard('{Escape}');
+
+  await waitFor(() => expect(cancelCompanionRegionSelection).toHaveBeenCalledTimes(2));
   expect(screen.getByRole('button', { name: '打开悬浮助手菜单' })).toBeVisible();
 });
 

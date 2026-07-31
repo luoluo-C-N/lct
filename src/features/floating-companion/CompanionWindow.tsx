@@ -252,9 +252,10 @@ export function CompanionWindow({
   }
 
   async function cancelRegionCapture() {
-    setRegionSession(null);
+    setError('');
     try {
       await cancelCompanionRegionSelection();
+      setRegionSession(null);
       setStatus('idle');
       setLastAction('已取消区域截图');
     } catch {
@@ -304,6 +305,7 @@ export function CompanionWindow({
       <RegionOverlay
         scaleFactor={regionSession.scaleFactor}
         previewDataUrl={regionSession.previewDataUrl}
+        error={error}
         onSelect={(region) => void completeRegionCapture(region)}
         onCancel={() => void cancelRegionCapture()}
       />
