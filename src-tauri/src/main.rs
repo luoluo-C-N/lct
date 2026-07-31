@@ -83,7 +83,8 @@ fn main() {
             commands::companion::focus_main_window,
             commands::companion::set_companion_expanded,
             commands::companion::begin_companion_region_selection,
-            commands::companion::finish_companion_region_selection,
+            commands::companion::complete_companion_region_selection,
+            commands::companion::cancel_companion_region_selection,
             commands::companion::save_companion_placement,
         ])
         .run(tauri::generate_context!())

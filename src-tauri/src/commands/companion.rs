@@ -13,8 +13,11 @@ use tauri::{
 use thiserror::Error;
 
 use crate::{
+    domain::asset::Asset,
     domain::companion::{CompanionSettings, CompanionSkin, MotionSettings, WindowPlacement},
+    repository::assets::AssetRepository,
     repository::companion::{CompanionRepository, CompanionRepositoryError},
+    services::capture::{self, CropRegion, ScreenCapturer, ScreenshotCapturer},
     services::skins::{self, SkinImportError},
 };
 
@@ -35,13 +38,19 @@ pub(crate) struct WindowBounds {
 
 #[derive(Default)]
 pub struct CompanionRegionSelectionState {
-    saved_bounds: Mutex<Option<WindowBounds>>,
+    session: Mutex<Option<RegionCaptureSession>>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+struct RegionCaptureSession {
+    original_bounds: WindowBounds,
+    image: image::RgbaImage,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RegionSelectionSession {
     pub scale_factor: f64,
+    pub preview_data_url: String,
 }
 
 pub(crate) trait RegionSelectionWindow {
@@ -49,6 +58,9 @@ pub(crate) trait RegionSelectionWindow {
     fn monitor_bounds(&self) -> Result<WindowBounds, CompanionCommandError>;
     fn scale_factor(&self) -> Result<f64, CompanionCommandError>;
     fn set_bounds(&self, bounds: WindowBounds) -> Result<(), CompanionCommandError>;
+    fn hide(&self) -> Result<(), CompanionCommandError>;
+    fn show(&self) -> Result<(), CompanionCommandError>;
+    fn focus(&self) -> Result<(), CompanionCommandError>;
 }
 
 impl<R: Runtime> RegionSelectionWindow for tauri::WebviewWindow<R> {
@@ -84,6 +96,21 @@ impl<R: Runtime> RegionSelectionWindow for tauri::WebviewWindow<R> {
             .and_then(|_| self.set_size(bounds.size))
             .map_err(|error| CompanionCommandError::Window(error.to_string()))
     }
+
+    fn hide(&self) -> Result<(), CompanionCommandError> {
+        self.hide()
+            .map_err(|error| CompanionCommandError::Window(error.to_string()))
+    }
+
+    fn show(&self) -> Result<(), CompanionCommandError> {
+        self.show()
+            .map_err(|error| CompanionCommandError::Window(error.to_string()))
+    }
+
+    fn focus(&self) -> Result<(), CompanionCommandError> {
+        self.set_focus()
+            .map_err(|error| CompanionCommandError::Window(error.to_string()))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -114,6 +141,8 @@ pub enum CompanionCommandError {
     Files(String),
     #[error("invalid skin update: {0}")]
     InvalidSkinUpdate(String),
+    #[error("capture failed: {0}")]
+    Capture(String),
 }
 
 impl From<CompanionRepositoryError> for CompanionCommandError {
@@ -355,26 +384,52 @@ pub fn begin_companion_region_selection<R: Runtime>(
     state: State<'_, CompanionRegionSelectionState>,
 ) -> Result<RegionSelectionSession, CompanionCommandError> {
     let window = known_window("companion", &app)?;
-    begin_region_selection_with(&window, &state)
+    begin_region_selection_with(&window, &state, &ScreenshotCapturer)
 }
 
 #[tauri::command]
-pub fn finish_companion_region_selection<R: Runtime>(
+pub fn complete_companion_region_selection<R: Runtime>(
+    region: CropRegion,
+    app: tauri::AppHandle<R>,
+    state: State<'_, CompanionRegionSelectionState>,
+    repository: State<'_, AssetRepository>,
+) -> Result<Asset, CompanionCommandError> {
+    let window = known_window("companion", &app)?;
+    let data_directory = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|error| CompanionCommandError::Files(error.to_string()))?;
+    complete_region_selection_with(
+        &window,
+        &state,
+        region,
+        &data_directory,
+        &repository,
+        |asset| {
+            app.emit("asset-created", asset)
+                .map_err(|error| CompanionCommandError::Event(error.to_string()))
+        },
+    )
+}
+
+#[tauri::command]
+pub fn cancel_companion_region_selection<R: Runtime>(
     app: tauri::AppHandle<R>,
     state: State<'_, CompanionRegionSelectionState>,
 ) -> Result<(), CompanionCommandError> {
     let window = known_window("companion", &app)?;
-    finish_region_selection_with(&window, &state)
+    cancel_region_selection_with(&window, &state)
 }
 
 pub(crate) fn begin_region_selection_with(
     window: &dyn RegionSelectionWindow,
     state: &CompanionRegionSelectionState,
+    capturer: &dyn ScreenCapturer,
 ) -> Result<RegionSelectionSession, CompanionCommandError> {
-    let mut saved = state.saved_bounds.lock().map_err(|_| {
+    let mut active = state.session.lock().map_err(|_| {
         CompanionCommandError::Window("region selection state is unavailable".to_owned())
     })?;
-    if saved.is_some() {
+    if active.is_some() {
         return Err(CompanionCommandError::Window(
             "region selection is already active".to_owned(),
         ));
@@ -382,31 +437,101 @@ pub(crate) fn begin_region_selection_with(
     let original = window.bounds()?;
     let monitor = window.monitor_bounds()?;
     let scale_factor = window.scale_factor()?;
-    if let Err(error) = window.set_bounds(monitor) {
-        if let Err(rollback_error) = window.set_bounds(original) {
-            return Err(CompanionCommandError::Window(format!(
-                "{error}; restoring companion bounds failed: {rollback_error}"
-            )));
+    window.hide()?;
+    let setup = (|| {
+        let image = capturer
+            .capture_primary()
+            .map_err(|error| CompanionCommandError::Capture(error.to_string()))?;
+        let preview_data_url = capture::encode_png_data_url(&image)
+            .map_err(|error| CompanionCommandError::Capture(error.to_string()))?;
+        window.set_bounds(monitor)?;
+        window.show()?;
+        window.focus()?;
+        Ok((image, preview_data_url))
+    })();
+    let (image, preview_data_url) = match setup {
+        Ok(result) => result,
+        Err(error) => {
+            restore_region_window(window, original).map_err(|rollback_error| {
+                CompanionCommandError::Window(format!(
+                    "{error}; restoring companion window failed: {rollback_error}"
+                ))
+            })?;
+            return Err(error);
         }
-        return Err(error);
-    }
-    *saved = Some(original);
-    Ok(RegionSelectionSession { scale_factor })
+    };
+    *active = Some(RegionCaptureSession {
+        original_bounds: original,
+        image,
+    });
+    Ok(RegionSelectionSession {
+        scale_factor,
+        preview_data_url,
+    })
 }
 
-pub(crate) fn finish_region_selection_with(
+pub(crate) fn cancel_region_selection_with(
     window: &dyn RegionSelectionWindow,
     state: &CompanionRegionSelectionState,
 ) -> Result<(), CompanionCommandError> {
-    let mut saved = state.saved_bounds.lock().map_err(|_| {
+    let mut active = state.session.lock().map_err(|_| {
         CompanionCommandError::Window("region selection state is unavailable".to_owned())
     })?;
-    let original = saved.ok_or_else(|| {
-        CompanionCommandError::Window("region selection is not active".to_owned())
-    })?;
-    window.set_bounds(original)?;
-    *saved = None;
+    let original = active
+        .as_ref()
+        .map(|session| session.original_bounds)
+        .ok_or_else(|| {
+            CompanionCommandError::Window("region selection is not active".to_owned())
+        })?;
+    restore_region_window(window, original)?;
+    *active = None;
     Ok(())
+}
+
+pub(crate) fn complete_region_selection_with<F>(
+    window: &dyn RegionSelectionWindow,
+    state: &CompanionRegionSelectionState,
+    region: CropRegion,
+    data_directory: &std::path::Path,
+    repository: &AssetRepository,
+    emit_asset: F,
+) -> Result<Asset, CompanionCommandError>
+where
+    F: FnOnce(&Asset) -> Result<(), CompanionCommandError>,
+{
+    let session = {
+        let mut active = state.session.lock().map_err(|_| {
+            CompanionCommandError::Window("region selection state is unavailable".to_owned())
+        })?;
+        let original = active
+            .as_ref()
+            .map(|session| session.original_bounds)
+            .ok_or_else(|| {
+                CompanionCommandError::Window("region selection is not active".to_owned())
+            })?;
+        restore_region_window(window, original)?;
+        active.take().expect("active region session checked above")
+    };
+    let cropped = capture::crop_image(session.image, region)
+        .map_err(|error| CompanionCommandError::Capture(error.to_string()))?;
+    let asset = capture::persist_captured_pixels(
+        cropped,
+        capture::CaptureMode::Region,
+        data_directory,
+        repository,
+    )
+    .map_err(|error| CompanionCommandError::Capture(error.to_string()))?;
+    emit_asset(&asset)?;
+    Ok(asset)
+}
+
+fn restore_region_window(
+    window: &dyn RegionSelectionWindow,
+    original: WindowBounds,
+) -> Result<(), CompanionCommandError> {
+    window.set_bounds(original)?;
+    window.show()?;
+    window.focus()
 }
 
 #[tauri::command]
