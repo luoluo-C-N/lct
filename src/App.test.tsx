@@ -71,6 +71,23 @@ it('restores a hidden companion from the main window', async () => {
   expect(await screen.findByRole('button', { name: '隐藏悬浮助手' })).toBeVisible();
 });
 
+it('recovers when the initial companion state read fails once', async () => {
+  vi.mocked(getCompanionSettings)
+    .mockRejectedValueOnce(new Error('startup race'))
+    .mockResolvedValueOnce({
+      activeSkinId: 'quiet-aurora',
+      motionEnabled: true,
+      visible: false,
+      placement: null,
+    });
+
+  render(<App />);
+
+  expect(await screen.findByRole('button', { name: '显示悬浮助手' })).toBeVisible();
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  expect(getCompanionSettings).toHaveBeenCalledTimes(2);
+});
+
 it('keeps the visibility state and exposes an alert when restoring fails', async () => {
   vi.mocked(showCompanion).mockRejectedValue(new Error('window unavailable'));
   render(<App />);

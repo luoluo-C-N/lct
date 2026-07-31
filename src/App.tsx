@@ -27,7 +27,7 @@ export default function App({ now = () => new Date() }: AppProps) {
   useEffect(() => {
     let active = true;
     let unlisten: (() => void) | undefined;
-    void getCompanionSettings()
+    void loadCompanionSettings()
       .then((settings) => {
         if (active) setCompanionVisible(settings.visible);
       })
@@ -90,4 +90,13 @@ export default function App({ now = () => new Date() }: AppProps) {
       {view === 'skins' && <SkinLibrary />}
     </main>
   );
+}
+
+async function loadCompanionSettings() {
+  try {
+    return await getCompanionSettings();
+  } catch {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    return getCompanionSettings();
+  }
 }
