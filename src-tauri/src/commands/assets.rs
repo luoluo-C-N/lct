@@ -45,7 +45,21 @@ pub fn capture<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     repository: State<'_, AssetRepository>,
 ) -> Result<Asset, String> {
-    capture_with(mode, region, app, repository, capture::capture)
+    capture_with(
+        mode,
+        region,
+        app,
+        repository,
+        |mode, region, data_directory, repository| {
+            capture::capture(
+                mode,
+                region,
+                &capture::Win32WindowLocator,
+                data_directory,
+                repository,
+            )
+        },
+    )
 }
 
 pub(crate) fn capture_with<R, F>(

@@ -20,5 +20,8 @@ screenshots = "0.8"
 thiserror = "2"
 zip = { version = "=8.6.0", default-features = false, features = ["deflate"] }
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }

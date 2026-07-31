@@ -9,8 +9,29 @@ use rusqlite::Connection;
 use crate::{
     domain::asset::AssetSource,
     repository::assets::AssetRepository,
-    services::capture::{crop_image, validate_region, CaptureMode, CropRegion},
+    services::capture::{
+        crop_image, normalize_window_region, resolve_capture_target, validate_region, CaptureError,
+        CaptureMode, CaptureTarget, CropRegion, WindowLocator,
+    },
 };
+
+struct MockWindowLocator {
+    rect: CropRegion,
+}
+
+impl WindowLocator for MockWindowLocator {
+    fn foreground_window_rect(&self) -> Result<CropRegion, CaptureError> {
+        Ok(self.rect)
+    }
+}
+
+struct MissingWindowLocator;
+
+impl WindowLocator for MissingWindowLocator {
+    fn foreground_window_rect(&self) -> Result<CropRegion, CaptureError> {
+        Err(CaptureError::NoFocusedWindow)
+    }
+}
 
 #[test]
 fn crops_a_screenshot_to_the_requested_region() {
@@ -38,6 +59,55 @@ fn region_capture_requires_a_crop_region() {
     assert_eq!(
         error.to_string(),
         "a crop region is required for region capture"
+    );
+}
+
+#[test]
+fn dispatches_fullscreen_region_and_window_capture_targets() {
+    let window_region = CropRegion {
+        x: 320,
+        y: 80,
+        width: 800,
+        height: 600,
+    };
+    let locator = MockWindowLocator {
+        rect: window_region,
+    };
+
+    assert_eq!(
+        resolve_capture_target(CaptureMode::Fullscreen, None, &locator).unwrap(),
+        CaptureTarget::Fullscreen
+    );
+    assert_eq!(
+        resolve_capture_target(CaptureMode::Region, Some(window_region), &locator).unwrap(),
+        CaptureTarget::PrimaryRegion(window_region)
+    );
+    assert_eq!(
+        resolve_capture_target(CaptureMode::Window, None, &locator).unwrap(),
+        CaptureTarget::VirtualDesktopRegion(window_region)
+    );
+}
+
+#[test]
+fn window_capture_propagates_a_missing_foreground_window() {
+    assert!(matches!(
+        resolve_capture_target(CaptureMode::Window, None, &MissingWindowLocator),
+        Err(CaptureError::NoFocusedWindow)
+    ));
+}
+
+#[test]
+fn normalizes_negative_virtual_desktop_coordinates() {
+    let region = normalize_window_region(-1600, 80, -800, 680, -1920, 0).unwrap();
+
+    assert_eq!(
+        region,
+        CropRegion {
+            x: 320,
+            y: 80,
+            width: 800,
+            height: 600,
+        }
     );
 }
 
