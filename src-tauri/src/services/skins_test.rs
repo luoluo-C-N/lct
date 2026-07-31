@@ -2,7 +2,7 @@ use std::{
     collections::BTreeSet,
     fs::{self, OpenOptions},
     io::{Cursor, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -781,7 +781,7 @@ impl SkinFixture {
         path
     }
 
-    fn assert_zip_rejected(&self, package: &PathBuf, expected: SkinImportErrorKind) {
+    fn assert_zip_rejected(&self, package: &Path, expected: SkinImportErrorKind) {
         let error = import_zip_skin(package, &self.data_directory, &self.repository).unwrap_err();
         assert_eq!(error.kind(), Some(expected), "{error}");
         self.assert_skin_directory_is_empty();

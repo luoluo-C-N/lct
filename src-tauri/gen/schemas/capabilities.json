@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"Main window permissions","local":true,"windows":["main"],"permissions":["core:default","dialog:allow-open"]}}
+{"companion":{"identifier":"companion","description":"Floating companion permissions","local":true,"windows":["companion"],"permissions":["core:default","core:window:allow-start-dragging"]},"default":{"identifier":"default","description":"Main window permissions","local":true,"windows":["main"],"permissions":["core:default","dialog:allow-open"]}}

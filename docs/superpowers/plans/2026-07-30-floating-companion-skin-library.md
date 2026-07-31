@@ -390,7 +390,7 @@ git commit -m "feat: validate local skin packages"
   - `save_companion_placement`
 - Emits complete committed payloads on `companion-skin-changed`, `companion-settings-changed`, and `companion-visibility-changed`.
 
-- [ ] **Step 1: Write failing Tauri configuration tests**
+- [x] **Step 1: Write failing Tauri configuration tests**
 
 ```rust
 #[test]
@@ -407,7 +407,7 @@ fn config_declares_a_safe_companion_window() {
 
 Also assert the asset protocol contains exactly previews and skins, and that `companion.json` grants core default plus only the start-dragging permission needed by the webview.
 
-- [ ] **Step 2: Run the configuration test and confirm RED**
+- [x] **Step 2: Run the configuration test and confirm RED**
 
 ```powershell
 cargo test --manifest-path src-tauri/Cargo.toml asset_protocol_config_test -- --nocapture
@@ -415,7 +415,7 @@ cargo test --manifest-path src-tauri/Cargo.toml asset_protocol_config_test -- --
 
 Expected: fail because the companion config and skin scope are absent.
 
-- [ ] **Step 3: Add the second configured window and capabilities**
+- [x] **Step 3: Add the second configured window and capabilities**
 
 Add window label `companion`, URL `index.html?window=companion`, size and safe flags. Extend asset protocol scope with:
 
@@ -425,7 +425,7 @@ Add window label `companion`, URL `index.html?window=companion`, size and safe f
 
 Keep the main capability assigned only to `main`; add a companion-specific capability for `companion`.
 
-- [ ] **Step 4: Write failing command/event tests with MockRuntime**
+- [x] **Step 4: Write failing command/event tests with MockRuntime**
 
 ```rust
 #[test]
@@ -447,7 +447,7 @@ fn an_invalid_window_operation_changes_nothing() {
 
 Cover failed import/set/delete emitting zero events and companion close hiding without exiting.
 
-- [ ] **Step 5: Implement commands and lifecycle**
+- [x] **Step 5: Implement commands and lifecycle**
 
 Manage `CompanionRepository` next to `AssetRepository`. Register all commands. On companion close request, call `prevent_close()` and hide. On main close, call `app.exit(0)`.
 
@@ -463,7 +463,7 @@ pub fn anchored_companion_bounds(
 
 Choose left/right and up/down expansion based on available space, then clamp the result. Emit visibility/settings events only after state persistence succeeds.
 
-- [ ] **Step 6: Run focused Rust tests**
+- [x] **Step 6: Run focused Rust tests**
 
 ```powershell
 cargo test --manifest-path src-tauri/Cargo.toml commands::companion_test
@@ -472,7 +472,7 @@ cargo test --manifest-path src-tauri/Cargo.toml asset_protocol_config_test
 
 Expected: commands, event counts, configuration, anchoring, close behavior, and scope pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```powershell
 git add src-tauri

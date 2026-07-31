@@ -23,7 +23,42 @@ fn asset_protocol_only_exposes_the_generated_preview_tree() {
     assert!(asset_protocol.enable);
     assert_eq!(
         asset_protocol.scope.allowed_paths(),
-        &[PathBuf::from("$APPLOCALDATA/assets/previews/**/*")]
+        &[
+            PathBuf::from("$APPLOCALDATA/assets/previews/**/*"),
+            PathBuf::from("$APPLOCALDATA/skins/**/*"),
+        ]
+    );
+}
+
+#[test]
+fn config_declares_a_safe_companion_window() {
+    let config: Config = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+    let companion = config
+        .app
+        .windows
+        .iter()
+        .find(|window| window.label == "companion")
+        .expect("companion window configuration");
+
+    assert_eq!(companion.width, 72.0);
+    assert_eq!(companion.height, 72.0);
+    assert!(!companion.decorations);
+    assert!(companion.always_on_top);
+    assert!(companion.skip_taskbar);
+    assert!(!companion.resizable);
+    assert!(companion.transparent);
+    assert!(companion.visible);
+}
+
+#[test]
+fn companion_capability_only_grants_default_core_and_window_dragging() {
+    let capability: serde_json::Value =
+        serde_json::from_str(include_str!("../capabilities/companion.json")).unwrap();
+
+    assert_eq!(capability["windows"], serde_json::json!(["companion"]));
+    assert_eq!(
+        capability["permissions"],
+        serde_json::json!(["core:default", "core:window:allow-start-dragging"])
     );
 }
 

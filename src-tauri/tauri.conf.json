@@ -14,15 +14,30 @@
       "assetProtocol": {
         "enable": true,
         "scope": [
-          "$APPLOCALDATA/assets/previews/**/*"
+          "$APPLOCALDATA/assets/previews/**/*",
+          "$APPLOCALDATA/skins/**/*"
         ]
       }
     },
     "windows": [
       {
+        "label": "main",
         "title": "魔法影像库",
         "width": 1200,
         "height": 800
+      },
+      {
+        "label": "companion",
+        "title": "悬浮助手",
+        "url": "index.html?window=companion",
+        "width": 72,
+        "height": 72,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "transparent": true,
+        "visible": true
       }
     ]
   },
