@@ -586,7 +586,7 @@ git commit -m "feat: route independent companion frontend"
 - Produces the `skins` main-window view and reusable `SkinPreview`.
 - `SkinPreview` renders all three complete built-in token sets and custom textures.
 
-- [ ] **Step 1: Write failing library behavior tests**
+- [x] **Step 1: Write failing library behavior tests**
 
 ```tsx
 it('lists all builtins and switches only after the command succeeds', async () => {
@@ -607,7 +607,7 @@ it('keeps the current skin and exposes an alert when import fails', async () => 
 
 Also test cancel, image/ZIP filters, rename, safe slider ranges, built-in delete absence, active custom delete fallback, event refresh, and delayed-listener cleanup.
 
-- [ ] **Step 2: Run focused tests and confirm RED**
+- [x] **Step 2: Run focused tests and confirm RED**
 
 ```powershell
 npm test -- SkinLibrary
@@ -615,7 +615,7 @@ npm test -- SkinLibrary
 
 Expected: fail because skin components do not exist.
 
-- [ ] **Step 3: Implement the view and controls**
+- [x] **Step 3: Implement the view and controls**
 
 Add `view: 'book' | 'gallery' | 'skins'` to `App`. The skin grid uses semantic buttons, `aria-pressed` for the active skin, a recoverable `role="alert"`, and `aria-live="polite"` for successful imports.
 
@@ -632,7 +632,7 @@ const presetClass: Record<VisualPreset, string> = {
 
 Do not use CSS `hue-rotate`.
 
-- [ ] **Step 4: Implement file selection and asset URLs**
+- [x] **Step 4: Implement file selection and asset URLs**
 
 The dialog filters are:
 
@@ -644,7 +644,7 @@ The dialog filters are:
 
 Convert preview/texture paths with `convertFileSrc`. Keep all command errors recoverable and preserve active selection until successful payload arrives.
 
-- [ ] **Step 5: Run focused and app tests**
+- [x] **Step 5: Run focused and app tests**
 
 ```powershell
 npm test -- SkinLibrary App
@@ -652,7 +652,7 @@ npm test -- SkinLibrary App
 
 Expected: all skin management and existing main shell tests pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add src/features/skins src/App.tsx src/App.test.tsx src/app.css
