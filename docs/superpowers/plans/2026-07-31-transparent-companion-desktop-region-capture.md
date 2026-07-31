@@ -309,6 +309,6 @@ git add docs/CONTINUATION.md docs/superpowers/plans/2026-07-31-transparent-compa
 git commit -m "docs: hand off frozen region capture"
 ```
 
-- [ ] **Step 4: Refresh offline bundle and synchronize**
+- [x] **Step 4: Refresh offline bundle and synchronize**
 
 Create/replace `handoff/magic-image-library.bundle` from `feat/magic-image-library`, push the branch, and verify local HEAD, remote branch, and bundle branch resolve to the same commit.
