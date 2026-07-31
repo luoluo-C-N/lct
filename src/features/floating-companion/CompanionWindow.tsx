@@ -52,6 +52,8 @@ export function CompanionWindow({
   const [horizontalAnchor, setHorizontalAnchor] = useState<'left' | 'right'>('right');
   const [verticalAnchor, setVerticalAnchor] = useState<'top' | 'bottom'>('bottom');
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const dragOriginRef = useRef<{ x: number; y: number } | null>(null);
+  const suppressClickRef = useRef(false);
 
   useCompanionPosition(windowApi, undefined, !open);
 
@@ -153,9 +155,34 @@ export function CompanionWindow({
     }
   }
 
-  function startDragging(event: React.PointerEvent<HTMLButtonElement>) {
+  function beginDragCandidate(event: React.PointerEvent<HTMLButtonElement>) {
     if (event.button !== 0) return;
-    void windowApi.startDragging().catch(() => setError('无法拖动悬浮助手。'));
+    dragOriginRef.current = { x: event.clientX, y: event.clientY };
+    suppressClickRef.current = false;
+  }
+
+  function startDragging(event: React.PointerEvent<HTMLButtonElement>) {
+    const origin = dragOriginRef.current;
+    if (!origin || (event.buttons & 1) === 0) return;
+    if (Math.hypot(event.clientX - origin.x, event.clientY - origin.y) < 6) return;
+    dragOriginRef.current = null;
+    suppressClickRef.current = true;
+    void windowApi.startDragging().catch(() => {
+      suppressClickRef.current = false;
+      setError('无法拖动悬浮助手。');
+    });
+  }
+
+  function finishDragCandidate() {
+    dragOriginRef.current = null;
+  }
+
+  function clickTrigger() {
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false;
+      return;
+    }
+    void toggleMenu();
   }
 
   async function selectSkin(skinId: string) {
@@ -236,8 +263,11 @@ export function CompanionWindow({
         aria-haspopup="menu"
         aria-expanded={open}
         data-testid="companion-drag-handle"
-        onPointerDown={startDragging}
-        onClick={() => void toggleMenu()}
+        onPointerDown={beginDragCandidate}
+        onPointerMove={startDragging}
+        onPointerUp={finishDragCandidate}
+        onPointerCancel={finishDragCandidate}
+        onClick={clickTrigger}
       >
         <CompanionOrb skin={activeSkin} motionEnabled={settings.motionEnabled} status={status} />
       </button>

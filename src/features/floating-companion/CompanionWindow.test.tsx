@@ -78,6 +78,7 @@ it('expands, restores focus on Escape, and requests anchored native resize', asy
   const trigger = screen.getByRole('button', { name: '打开悬浮助手菜单' });
 
   await userEvent.click(trigger);
+  expect(windowApi.startDragging).not.toHaveBeenCalled();
   expect(setCompanionExpanded).toHaveBeenCalledWith(true);
   expect(trigger).toHaveAttribute('aria-expanded', 'true');
 
@@ -91,9 +92,11 @@ it('starts native dragging only from the orb drag handle', async () => {
   await act(async () => Promise.resolve());
 
   const handle = screen.getByTestId('companion-drag-handle');
-  fireEvent(handle, pointerDown(1));
+  fireEvent(handle, pointerEvent('pointerdown', { button: 1, clientX: 10, clientY: 10 }));
   expect(windowApi.startDragging).not.toHaveBeenCalled();
-  fireEvent(handle, pointerDown(0));
+  fireEvent(handle, pointerEvent('pointerdown', { button: 0, clientX: 10, clientY: 10 }));
+  expect(windowApi.startDragging).not.toHaveBeenCalled();
+  fireEvent(handle, pointerEvent('pointermove', { buttons: 1, clientX: 20, clientY: 10 }));
   expect(windowApi.startDragging).toHaveBeenCalledTimes(1);
 });
 
@@ -188,8 +191,10 @@ function skin(id: string, visualPreset: CompanionSkin['visualPreset']): Companio
   };
 }
 
-function pointerDown(button: number) {
-  const event = new Event('pointerdown', { bubbles: true });
-  Object.defineProperty(event, 'button', { value: button });
+function pointerEvent(type: string, properties: Record<string, number>) {
+  const event = new Event(type, { bubbles: true });
+  Object.entries(properties).forEach(([name, value]) => {
+    Object.defineProperty(event, name, { value });
+  });
   return event;
 }
