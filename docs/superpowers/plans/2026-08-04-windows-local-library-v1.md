@@ -6,7 +6,7 @@
 
 **Architecture:** 保留现有 Tauri 2、React 19、SQLite、截图和悬浮助手实现。Rust Repository 负责 schema 与查询，资产 Service 协调文件系统补偿，命令层负责 IPC 与尽力事件；前端用局部查询 Hook、游标分页和虚拟网格组织图库，图库与魔法书复用详情面板。
 
-**Tech Stack:** Rust 2021, Tauri 2, rusqlite 0.37, React 19, TypeScript 5.6, Vite 5, Vitest 2, Testing Library, `@tanstack/react-virtual`, GitHub Actions Windows runner.
+**Tech Stack:** Rust 2021, Tauri 2, rusqlite 0.37, React 19, TypeScript 5.6, Vite 5, Vitest 2, Testing Library, `@tanstack/react-virtual`, WebdriverIO, `tauri-driver`, EdgeDriver, GitHub Actions Windows runner.
 
 ## Global Constraints
 
@@ -61,7 +61,7 @@ Assert all four indexes exist through `sqlite_master`, and a second open is idem
 Run:
 
 ```powershell
-cargo test --manifest-path src-tauri/Cargo.toml domain::asset_test repository::assets_test -- --nocapture
+cargo test --manifest-path src-tauri/Cargo.toml asset_test -- --nocapture
 ```
 
 Expected: compile failure because `display_name` and schema v4 are absent.
@@ -291,11 +291,11 @@ Assert accessible controls for month, search, source, tags, favorite, import and
 
 - [ ] **Step 5: Implement toolbar, virtual grid and workspace**
 
-Use stable row height/aspect ratio and `@tanstack/react-virtual`. Preserve filters and scroll while selecting a card. Reuse existing import and screenshot IPC wrappers from main-window controls.
+Use stable row height/aspect ratio and `@tanstack/react-virtual`. Give tests a literal scroll viewport rectangle and ResizeObserver fixture so jsdom virtualization is deterministic. Preserve filters and scroll while selecting a card. Reuse existing import and screenshot IPC wrappers from main-window controls.
 
 - [ ] **Step 6: Write failing navigation tests and make gallery default**
 
-Assert initial render is `图库`, top-level entries are 图库/魔法书/回收站, and 皮肤库 is absent from primary navigation. Implement App routing state. Replace `ClassicGallery` usage with `LibraryWorkspace`; keep the old component temporarily only if tests still reference it, then delete it and its obsolete tests in a later cleanup within this task.
+Assert initial render is `图库`, top-level entries are 图库/魔法书/回收站, and 皮肤库 is absent from primary navigation. Implement App routing state. Replace `ClassicGallery` with `LibraryWorkspace`, delete `ClassicGallery.tsx`, and migrate or delete `ClassicGallery.test.tsx` assertions after equivalent query/navigation coverage exists in the new workspace tests.
 
 - [ ] **Step 7: Migrate asset-created listeners**
 
@@ -401,7 +401,7 @@ Write a failing panel test, call `softDeleteAsset`, close the panel only after s
 
 - [ ] **Step 4: Write failing settings/navigation tests**
 
-Assert Settings is a secondary button, SkinLibrary is rendered inside Settings, companion show/hide remains functional, and returning to Gallery preserves the current in-memory gallery workspace state while mounted.
+Assert Settings is a secondary button, SkinLibrary is rendered inside Settings, companion show/hide remains functional, and returning to Gallery reconstructs the default query without stale detail selection.
 
 - [ ] **Step 5: Implement SettingsView and navigation**
 
@@ -419,12 +419,13 @@ git commit -m "feat: complete trash and settings flows"
 
 ---
 
-### Task 7: 性能门槛、CI、E2E 和 1.0 交接
+### Task 7: 性能门槛、CI、真实桌面 E2E 和 1.0 交接
 
 **Files:**
 - Modify: `src-tauri/src/repository/assets_test.rs`
-- Create: `playwright.config.ts`
-- Create: `e2e/local-library.spec.ts`
+- Create: `wdio.conf.ts`
+- Create: `e2e/local-library.e2e.ts`
+- Create: `e2e/fixtures/` PNG/JPEG/WebP files
 - Modify: `package.json`
 - Modify: `package-lock.json`
 - Create: `.github/workflows/windows-ci.yml`
@@ -453,18 +454,18 @@ cargo test --manifest-path src-tauri/Cargo.toml repository::assets_test::queries
 
 If the test fails, inspect the query plan before changing indexes or SQL. No speculative cache layer.
 
-- [ ] **Step 3: Add Playwright and deterministic E2E harness**
+- [ ] **Step 3: Add WebdriverIO/Tauri Driver desktop E2E harness**
 
 ```powershell
-npm install --save-dev @playwright/test
-npx playwright install chromium
+npm install --save-dev @wdio/cli @wdio/local-runner @wdio/mocha-framework @wdio/spec-reporter webdriverio
+cargo install tauri-driver --locked
 ```
 
-Create an E2E fixture mode that uses a temporary app data directory and test-only controlled asset commands. Cover import fixture, region-capture command boundary, search/favorite/tags, trash/restore/permanent delete and reload persistence. Never expose debug seed commands in release builds.
+Configure `tauri-driver` with matching Microsoft Edge WebDriver to launch the actual debug Tauri executable. Use a task-specific temporary app data directory and debug-only controlled fixture import/capture hooks. Cover import fixture, region-capture IPC boundary, search/favorite/tags, trash/restore/permanent delete and process-restart persistence. Never register fixture hooks in release builds.
 
 - [ ] **Step 4: Add Windows CI**
 
-Run npm install, Vitest, Rust tests, fmt check, frontend build and `tauri build --debug --no-bundle` on `windows-latest`. Cache Cargo and npm directories using lockfile hashes. E2E runs in a separate Windows job with artifacts on failure.
+Run npm install, Vitest, Rust tests, fmt check, frontend build and `tauri build --debug --no-bundle` on `windows-latest`. Cache Cargo and npm directories using lockfile hashes. E2E runs in a separate Windows job that installs `tauri-driver`, resolves the installed Edge version to a matching EdgeDriver, and uploads driver/application logs plus screenshots on failure.
 
 - [ ] **Step 5: Correct release configuration and documentation**
 
@@ -491,4 +492,3 @@ Use the built application to verify the complete user loop, transparent companio
 - [ ] **Step 8: Update handoff, commit, refresh and synchronize**
 
 Mark plan checkboxes, update `docs/CONTINUATION.md`, commit documentation, run `scripts/refresh-handoff.ps1`, push the branch, and verify local HEAD, remote branch, bundle branch and `handoff/manifest.json` resolve to the same commit.
-

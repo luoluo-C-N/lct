@@ -315,6 +315,8 @@ Rust 侧把 `repository/assets.rs` 保持为 schema 与 SQL 所有者，但把�
 
 ### 12.3 Windows E2E
 
+真实桌面 E2E 使用 `tauri-driver`、WebdriverIO 和与系统 Edge 匹配的 EdgeDriver，直接启动 debug Tauri 可执行文件。Playwright 不作为 Tauri native E2E 工具，因为普通浏览器页面无法验证 AppHandle、原生窗口、文件对话框和 IPC 注册。
+
 至少覆盖：
 
 1. 导入图片并在图库出现。
