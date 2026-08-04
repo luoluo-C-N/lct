@@ -27,9 +27,15 @@ function asset(id: string, createdAt: string): Asset {
     source: 'import',
     originalPath: `C:\\images\\${id}.png`,
     previewPath: `C:\\previews\\${id}.jpg`,
+    displayName: `${id}.png`,
     albumId: null,
+    tags: [],
     favorite: false,
+    deletedAt: null,
+    captureMode: null,
+    annotationData: null,
     syncVersion: 1,
+    cloudId: null,
   };
 }
 

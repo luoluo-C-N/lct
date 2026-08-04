@@ -172,6 +172,39 @@ fn persists_in_memory_pixels_as_a_region_capture_asset() {
     assert_eq!(persisted.dimensions(), (2, 2));
     assert_eq!(persisted.get_pixel(0, 0), &image::Rgba([90, 80, 70, 255]));
     assert_eq!(asset.capture_mode, Some(CaptureMode::Region));
+    assert!(asset.display_name.starts_with("区域截图 "));
+    assert!(asset.display_name.ends_with(".png"));
+
+    fs::remove_dir_all(temporary_directory).unwrap();
+}
+
+#[test]
+fn names_every_capture_mode_for_people_instead_of_managed_storage() {
+    let temporary_directory = temporary_directory();
+    let data_directory = temporary_directory.join("app-data");
+    let repository =
+        AssetRepository::from_connection(Connection::open_in_memory().unwrap()).unwrap();
+
+    for (mode, prefix) in [
+        (CaptureMode::Fullscreen, "全屏截图 "),
+        (CaptureMode::Region, "区域截图 "),
+        (CaptureMode::Window, "窗口截图 "),
+    ] {
+        let asset = persist_captured_pixels(
+            image::RgbaImage::from_pixel(1, 1, image::Rgba([1, 2, 3, 255])),
+            mode,
+            &data_directory,
+            &repository,
+        )
+        .unwrap();
+
+        assert!(asset.display_name.starts_with(prefix));
+        assert!(asset.display_name.ends_with(".png"));
+        assert_ne!(
+            asset.display_name,
+            asset.original_path.file_name().unwrap().to_string_lossy()
+        );
+    }
 
     fs::remove_dir_all(temporary_directory).unwrap();
 }

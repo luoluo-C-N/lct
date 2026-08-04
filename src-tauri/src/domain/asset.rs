@@ -12,6 +12,7 @@ pub struct Asset {
     pub source: AssetSource,
     pub original_path: PathBuf,
     pub preview_path: PathBuf,
+    pub display_name: String,
     pub album_id: Option<String>,
     pub tags: Vec<String>,
     pub favorite: bool,

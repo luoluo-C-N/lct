@@ -63,6 +63,7 @@ pub(crate) fn persist_image(
             .save(&preview_path)?;
 
         let now = Utc::now();
+        let display_name = asset_display_name(source_path, source, capture_mode, now, &id);
         let file_created_at: DateTime<Utc> = fs::metadata(source_path)
             .ok()
             .and_then(|metadata| metadata.created().ok())
@@ -76,6 +77,7 @@ pub(crate) fn persist_image(
             source,
             original_path: original_path.clone(),
             preview_path: preview_path.clone(),
+            display_name,
             album_id: None,
             tags: Vec::new(),
             favorite: false,
@@ -94,6 +96,31 @@ pub(crate) fn persist_image(
         let _ = fs::remove_file(&preview_path);
     }
     result
+}
+
+fn asset_display_name(
+    source_path: &Path,
+    source: AssetSource,
+    capture_mode: Option<CaptureMode>,
+    imported_at: DateTime<Utc>,
+    fallback_id: &str,
+) -> String {
+    if source == AssetSource::Import {
+        return source_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .filter(|name| !name.is_empty())
+            .unwrap_or(fallback_id)
+            .to_owned();
+    }
+
+    let label = match capture_mode {
+        Some(CaptureMode::Fullscreen) => "全屏截图",
+        Some(CaptureMode::Region) => "区域截图",
+        Some(CaptureMode::Window) => "窗口截图",
+        None => "截图",
+    };
+    format!("{label} {}.png", imported_at.format("%Y-%m-%d %H-%M-%S"))
 }
 
 pub(crate) fn new_asset_id() -> String {

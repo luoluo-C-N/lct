@@ -30,6 +30,7 @@ fn import_copies_png_and_creates_import_asset() {
         Some(data_directory.join("assets").join("previews").as_path())
     );
     assert_eq!(asset.source, AssetSource::Import);
+    assert_eq!(asset.display_name, "source.png");
     assert!(asset.created_at < asset.imported_at);
 
     fs::remove_dir_all(temporary_directory).unwrap();

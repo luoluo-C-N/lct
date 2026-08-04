@@ -8,9 +8,15 @@ export type Asset = {
   source: 'import' | 'capture';
   originalPath: string;
   previewPath: string;
+  displayName: string;
   albumId: string | null;
+  tags: string[];
   favorite: boolean;
+  deletedAt: string | null;
+  captureMode: 'fullscreen' | 'region' | 'window' | null;
+  annotationData: string | null;
   syncVersion: number;
+  cloudId: string | null;
 };
 
 export const listAssetsByMonth = (year: number, month: number) =>

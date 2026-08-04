@@ -26,6 +26,7 @@ fn new_asset(created_at: &str) -> Asset {
         source: AssetSource::Import,
         original_path: "C:/assets/original.png".into(),
         preview_path: "C:/assets/preview.png".into(),
+        display_name: "fixture.png".to_owned(),
         album_id: None,
         tags: Vec::new(),
         favorite: false,
@@ -85,7 +86,7 @@ fn loads_tags_from_the_relationship_tables() {
 }
 
 #[test]
-fn migrates_a_v1_database_to_v3_without_rebuilding_assets() {
+fn migrates_a_v1_database_to_v4_without_rebuilding_assets() {
     let connection = Connection::open_in_memory().unwrap();
     connection
         .execute_batch(
@@ -127,7 +128,8 @@ fn migrates_a_v1_database_to_v3_without_rebuilding_assets() {
     assert!(columns.contains(&"capture_mode".to_owned()));
     assert!(columns.contains(&"annotation_data".to_owned()));
     assert!(columns.contains(&"cloud_id".to_owned()));
-    assert_eq!(version, "3");
+    assert!(columns.contains(&"display_name".to_owned()));
+    assert_eq!(version, "4");
     assert_eq!(
         connection
             .query_row("SELECT id FROM assets WHERE id = 'existing'", [], |row| row
@@ -135,4 +137,76 @@ fn migrates_a_v1_database_to_v3_without_rebuilding_assets() {
             .unwrap(),
         "existing"
     );
+}
+
+#[test]
+fn migrates_v3_to_v4_and_backfills_display_names_and_indexes() {
+    let connection = Connection::open_in_memory().unwrap();
+    connection
+        .execute_batch(
+            "CREATE TABLE assets (
+                id TEXT PRIMARY KEY NOT NULL,
+                created_at TEXT NOT NULL,
+                imported_at TEXT NOT NULL,
+                source TEXT NOT NULL,
+                original_path TEXT NOT NULL,
+                preview_path TEXT NOT NULL,
+                album_id TEXT,
+                favorite INTEGER NOT NULL DEFAULT 0,
+                deleted_at TEXT,
+                capture_mode TEXT,
+                annotation_data TEXT,
+                sync_version INTEGER NOT NULL DEFAULT 0,
+                cloud_id TEXT
+            );
+            CREATE TABLE app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            INSERT INTO app_meta(key, value) VALUES ('schema_version', '3');
+            CREATE TABLE tags (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE);
+            CREATE TABLE asset_tags (
+                asset_id TEXT NOT NULL,
+                tag_id INTEGER NOT NULL,
+                PRIMARY KEY (asset_id, tag_id)
+            );
+            INSERT INTO assets (
+                id, created_at, imported_at, source, original_path, preview_path
+            ) VALUES (
+                'asset-old', '2026-07-01T00:00:00Z', '2026-07-01T00:00:00Z',
+                'import', 'C:/library/old-photo.png', 'C:/library/old-preview.png'
+            );
+            INSERT INTO tags(id, name) VALUES (1, 'travel');
+            INSERT INTO asset_tags(asset_id, tag_id) VALUES ('asset-old', 1);",
+        )
+        .unwrap();
+
+    migrate_schema(&connection).unwrap();
+    let version: String = connection
+        .query_row(
+            "SELECT value FROM app_meta WHERE key = 'schema_version'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(version, "4");
+    for index in [
+        "idx_assets_active_created",
+        "idx_assets_source_created",
+        "idx_assets_favorite_created",
+        "idx_asset_tags_tag_asset",
+    ] {
+        assert!(
+            connection
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?1)",
+                    [index],
+                    |row| row.get::<_, bool>(0),
+                )
+                .unwrap(),
+            "missing index {index}"
+        );
+    }
+
+    let repository = AssetRepository::from_connection(connection).unwrap();
+    let asset = repository.get_by_id("asset-old").unwrap().unwrap();
+    assert_eq!(asset.display_name, "old-photo.png");
+    assert_eq!(asset.tags, vec!["travel"]);
 }

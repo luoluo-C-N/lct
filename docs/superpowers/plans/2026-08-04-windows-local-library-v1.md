@@ -43,7 +43,7 @@
 - Produces: schema version `4` with `display_name` and four query indexes.
 - Preserves: relationship-table tags and current import/capture persistence.
 
-- [ ] **Step 1: Write failing domain and migration tests**
+- [x] **Step 1: Write failing domain and migration tests**
 
 Extend the Asset serialization fixture with literal `display_name: "sunset.png"` and expect `displayName`. Add an in-memory v3 fixture and assert opening the repository:
 
@@ -56,7 +56,7 @@ assert_eq!(asset.tags, vec!["travel"]);
 
 Assert all four indexes exist through `sqlite_master`, and a second open is idempotent.
 
-- [ ] **Step 2: Run focused tests and verify RED**
+- [x] **Step 2: Run focused tests and verify RED**
 
 Run:
 
@@ -66,15 +66,15 @@ cargo test --manifest-path src-tauri/Cargo.toml asset_test -- --nocapture
 
 Expected: compile failure because `display_name` and schema v4 are absent.
 
-- [ ] **Step 3: Implement schema v4 and domain mapping**
+- [x] **Step 3: Implement schema v4 and domain mapping**
 
 Add `display_name` to `Asset`, `StoredAsset`, INSERT/SELECT mapping and test fixtures. Make the v3 migration execute the exact v4 ALTER/index statements in one transaction, backfill empty names from `Path::file_name()` with asset ID fallback, then update `app_meta`. Add `get_by_id(&self, id: &str) -> Result<Option<Asset>, AssetRepositoryError>` for later tasks.
 
-- [ ] **Step 4: Write failing import/capture naming tests**
+- [x] **Step 4: Write failing import/capture naming tests**
 
 Assert import preserves source filename exactly and each capture mode produces a non-empty localized display name ending in `.png`, independent of the random managed path.
 
-- [ ] **Step 5: Verify RED, implement names, and align TypeScript**
+- [x] **Step 5: Verify RED, implement names, and align TypeScript**
 
 Run focused service tests, implement `import_display_name` and `capture_display_name`, then update `src/lib/assets.ts` and every TypeScript Asset fixture with the full contract:
 
@@ -87,7 +87,7 @@ annotationData: null,
 cloudId: null,
 ```
 
-- [ ] **Step 6: Verify Task 1 and commit**
+- [x] **Step 6: Verify Task 1 and commit**
 
 ```powershell
 cargo fmt --manifest-path src-tauri/Cargo.toml -- --check

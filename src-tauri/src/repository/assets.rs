@@ -33,6 +33,7 @@ struct StoredAsset {
     source: String,
     original_path: String,
     preview_path: String,
+    display_name: String,
     album_id: Option<String>,
     favorite: i64,
     deleted_at: Option<String>,
@@ -55,8 +56,8 @@ impl AssetRepository {
             .expect("asset repository lock poisoned");
         connection.execute(
             "INSERT INTO assets (
-                id, created_at, imported_at, source, original_path, preview_path, album_id, favorite, deleted_at, capture_mode, annotation_data, sync_version, cloud_id
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                id, created_at, imported_at, source, original_path, preview_path, display_name, album_id, favorite, deleted_at, capture_mode, annotation_data, sync_version, cloud_id
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
             params![
                 asset.id,
                 asset.created_at.to_rfc3339(),
@@ -64,6 +65,7 @@ impl AssetRepository {
                 asset.source.as_str(),
                 asset.original_path.to_string_lossy(),
                 asset.preview_path.to_string_lossy(),
+                asset.display_name,
                 asset.album_id,
                 i64::from(asset.favorite),
                 asset.deleted_at.as_ref().map(|value| value.to_rfc3339()),
@@ -95,6 +97,24 @@ impl AssetRepository {
         let start = date_start(year, month, day)?;
         let end = start + chrono::Duration::days(1);
         self.list_between(start, end)
+    }
+
+    pub fn get_by_id(&self, id: &str) -> Result<Option<Asset>, AssetRepositoryError> {
+        let connection = self
+            .connection
+            .lock()
+            .expect("asset repository lock poisoned");
+        let stored = connection
+            .query_row(
+                "SELECT id, created_at, imported_at, source, original_path, preview_path, display_name, album_id, favorite, deleted_at, capture_mode, annotation_data, sync_version, cloud_id
+                 FROM assets WHERE id = ?1",
+                params![id],
+                stored_asset_from_row,
+            )
+            .optional()?;
+        stored
+            .map(|stored| asset_with_tags(&connection, stored))
+            .transpose()
     }
 
     pub fn set_tags(&self, asset_id: &str, tags: &[String]) -> Result<(), AssetRepositoryError> {
@@ -142,7 +162,7 @@ impl AssetRepository {
             .lock()
             .expect("asset repository lock poisoned");
         let mut statement = connection.prepare(
-            "SELECT id, created_at, imported_at, source, original_path, preview_path, album_id, favorite, deleted_at, capture_mode, annotation_data, sync_version, cloud_id
+            "SELECT id, created_at, imported_at, source, original_path, preview_path, display_name, album_id, favorite, deleted_at, capture_mode, annotation_data, sync_version, cloud_id
              FROM assets
              WHERE created_at >= ?1 AND created_at < ?2
              ORDER BY created_at DESC",
@@ -154,13 +174,20 @@ impl AssetRepository {
 
         rows.map(|row| {
             let stored = row.map_err(AssetRepositoryError::from)?;
-            let tags = load_tags(&connection, &stored.id)?;
-            let mut asset = Asset::try_from(stored)?;
-            asset.tags = tags;
-            Ok(asset)
+            asset_with_tags(&connection, stored)
         })
         .collect()
     }
+}
+
+fn asset_with_tags(
+    connection: &Connection,
+    stored: StoredAsset,
+) -> Result<Asset, AssetRepositoryError> {
+    let tags = load_tags(connection, &stored.id)?;
+    let mut asset = Asset::try_from(stored)?;
+    asset.tags = tags;
+    Ok(asset)
 }
 
 fn load_tags(connection: &Connection, asset_id: &str) -> Result<Vec<String>, AssetRepositoryError> {
@@ -199,18 +226,26 @@ pub(crate) fn migrate_schema(connection: &Connection) -> Result<(), AssetReposit
         )
         .optional()?;
 
+    let transaction = connection.unchecked_transaction()?;
+
     match version.as_deref() {
-        Some("2") | Some("3") => {}
+        Some("4") => {}
+        Some("2") | Some("3") => {
+            transaction.execute_batch(
+                "ALTER TABLE assets ADD COLUMN display_name TEXT NOT NULL DEFAULT '';",
+            )?;
+        }
         Some("1") | None if assets_exist => {
-            connection.execute_batch(
+            transaction.execute_batch(
                 "ALTER TABLE assets ADD COLUMN deleted_at TEXT;
                  ALTER TABLE assets ADD COLUMN capture_mode TEXT;
                  ALTER TABLE assets ADD COLUMN annotation_data TEXT;
-                 ALTER TABLE assets ADD COLUMN cloud_id TEXT;",
+                 ALTER TABLE assets ADD COLUMN cloud_id TEXT;
+                 ALTER TABLE assets ADD COLUMN display_name TEXT NOT NULL DEFAULT '';",
             )?;
         }
         None => {
-            connection.execute_batch(
+            transaction.execute_batch(
                 "CREATE TABLE assets (
                     id TEXT PRIMARY KEY NOT NULL,
                     created_at TEXT NOT NULL,
@@ -218,6 +253,7 @@ pub(crate) fn migrate_schema(connection: &Connection) -> Result<(), AssetReposit
                     source TEXT NOT NULL,
                     original_path TEXT NOT NULL,
                     preview_path TEXT NOT NULL,
+                    display_name TEXT NOT NULL DEFAULT '',
                     album_id TEXT,
                     favorite INTEGER NOT NULL DEFAULT 0,
                     deleted_at TEXT,
@@ -235,9 +271,12 @@ pub(crate) fn migrate_schema(connection: &Connection) -> Result<(), AssetReposit
         }
     }
 
-    connection.execute_batch(
+    transaction.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_assets_created_at ON assets(created_at);
          CREATE INDEX IF NOT EXISTS idx_assets_deleted_at ON assets(deleted_at);
+         CREATE INDEX IF NOT EXISTS idx_assets_active_created ON assets(deleted_at, created_at DESC, id DESC);
+         CREATE INDEX IF NOT EXISTS idx_assets_source_created ON assets(source, created_at DESC, id DESC);
+         CREATE INDEX IF NOT EXISTS idx_assets_favorite_created ON assets(favorite, created_at DESC, id DESC);
          CREATE TABLE IF NOT EXISTS tags (
             id INTEGER PRIMARY KEY,
             name TEXT NOT NULL UNIQUE
@@ -247,6 +286,7 @@ pub(crate) fn migrate_schema(connection: &Connection) -> Result<(), AssetReposit
             tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
             PRIMARY KEY (asset_id, tag_id)
          );
+         CREATE INDEX IF NOT EXISTS idx_asset_tags_tag_asset ON asset_tags(tag_id, asset_id);
          CREATE TABLE IF NOT EXISTS companion_skins (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
@@ -266,10 +306,37 @@ pub(crate) fn migrate_schema(connection: &Connection) -> Result<(), AssetReposit
             visible INTEGER NOT NULL,
             placement_json TEXT
          );
-         INSERT INTO app_meta(key, value) VALUES ('schema_version', '3')
+         INSERT INTO app_meta(key, value) VALUES ('schema_version', '4')
          ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
     )?;
-    seed_builtin_skins(connection)?;
+    backfill_display_names(&transaction)?;
+    seed_builtin_skins(&transaction)?;
+    transaction.commit()?;
+    Ok(())
+}
+
+fn backfill_display_names(connection: &Connection) -> Result<(), AssetRepositoryError> {
+    let rows = {
+        let mut statement =
+            connection.prepare("SELECT id, original_path FROM assets WHERE display_name = ''")?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        rows
+    };
+    for (id, original_path) in rows {
+        let display_name = Path::new(&original_path)
+            .file_name()
+            .and_then(|value| value.to_str())
+            .filter(|value| !value.is_empty())
+            .unwrap_or(&id);
+        connection.execute(
+            "UPDATE assets SET display_name = ?1 WHERE id = ?2",
+            params![display_name, id],
+        )?;
+    }
     Ok(())
 }
 
@@ -317,13 +384,14 @@ fn stored_asset_from_row(row: &Row<'_>) -> rusqlite::Result<StoredAsset> {
         source: row.get(3)?,
         original_path: row.get(4)?,
         preview_path: row.get(5)?,
-        album_id: row.get(6)?,
-        favorite: row.get(7)?,
-        deleted_at: row.get(8)?,
-        capture_mode: row.get(9)?,
-        annotation_data: row.get(10)?,
-        sync_version: row.get(11)?,
-        cloud_id: row.get(12)?,
+        display_name: row.get(6)?,
+        album_id: row.get(7)?,
+        favorite: row.get(8)?,
+        deleted_at: row.get(9)?,
+        capture_mode: row.get(10)?,
+        annotation_data: row.get(11)?,
+        sync_version: row.get(12)?,
+        cloud_id: row.get(13)?,
     })
 }
 
@@ -339,6 +407,7 @@ impl TryFrom<StoredAsset> for Asset {
                 .ok_or(AssetRepositoryError::InvalidSource(stored.source))?,
             original_path: stored.original_path.into(),
             preview_path: stored.preview_path.into(),
+            display_name: stored.display_name,
             album_id: stored.album_id,
             tags: Vec::new(),
             favorite: stored.favorite != 0,
