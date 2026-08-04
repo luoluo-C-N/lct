@@ -23,6 +23,34 @@ pub struct Asset {
     pub cloud_id: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssetCursor {
+    pub sort_timestamp: DateTime<Utc>,
+    pub id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssetQuery {
+    pub year: Option<i32>,
+    pub month: Option<u32>,
+    pub text: Option<String>,
+    pub tags: Vec<String>,
+    pub source: Option<AssetSource>,
+    pub favorite_only: bool,
+    pub deleted: bool,
+    pub cursor: Option<AssetCursor>,
+    pub limit: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssetPage {
+    pub items: Vec<Asset>,
+    pub next_cursor: Option<AssetCursor>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CaptureMode {

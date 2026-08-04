@@ -1,10 +1,10 @@
 use std::{path::Path, sync::Mutex};
 
 use chrono::{DateTime, NaiveDate, Utc};
-use rusqlite::{params, Connection, OptionalExtension, Row};
+use rusqlite::{params, params_from_iter, types::ToSql, Connection, OptionalExtension, Row};
 use thiserror::Error;
 
-use crate::domain::asset::{Asset, AssetSource};
+use crate::domain::asset::{Asset, AssetCursor, AssetPage, AssetQuery, AssetSource};
 use crate::domain::companion::CompanionSkin;
 
 pub struct AssetRepository {
@@ -117,6 +117,118 @@ impl AssetRepository {
             .transpose()
     }
 
+    pub fn query(&self, query: &AssetQuery) -> Result<AssetPage, AssetRepositoryError> {
+        let connection = self
+            .connection
+            .lock()
+            .expect("asset repository lock poisoned");
+        let limit = if query.limit == 0 {
+            60
+        } else {
+            query.limit.min(120)
+        };
+        let sort_column = if query.deleted {
+            "deleted_at"
+        } else {
+            "created_at"
+        };
+        let mut sql = format!(
+            "SELECT id, created_at, imported_at, source, original_path, preview_path, display_name, album_id, favorite, deleted_at, capture_mode, annotation_data, sync_version, cloud_id
+             FROM assets WHERE {} IS {}NULL",
+            if query.deleted { "deleted_at" } else { "deleted_at" },
+            if query.deleted { "NOT " } else { "" },
+        );
+        let mut values: Vec<Box<dyn ToSql>> = Vec::new();
+
+        if let (Some(year), Some(month)) = (query.year, query.month) {
+            let start = date_start(year, month, 1)?;
+            let end = if month == 12 {
+                date_start(year + 1, 1, 1)?
+            } else {
+                date_start(year, month + 1, 1)?
+            };
+            sql.push_str(" AND created_at >= ? AND created_at < ?");
+            values.push(Box::new(start.to_rfc3339()));
+            values.push(Box::new(end.to_rfc3339()));
+        }
+        if let Some(text) = query
+            .text
+            .as_deref()
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+        {
+            sql.push_str(" AND display_name LIKE ? ESCAPE '\\' COLLATE NOCASE");
+            values.push(Box::new(format!("%{}%", escape_like(text))));
+        }
+        if let Some(source) = query.source {
+            sql.push_str(" AND source = ?");
+            values.push(Box::new(source.as_str()));
+        }
+        if query.favorite_only {
+            sql.push_str(" AND favorite != 0");
+        }
+        for tag in query
+            .tags
+            .iter()
+            .map(|tag| tag.trim())
+            .filter(|tag| !tag.is_empty())
+        {
+            sql.push_str(
+                " AND EXISTS (
+                    SELECT 1 FROM asset_tags
+                    INNER JOIN tags ON tags.id = asset_tags.tag_id
+                    WHERE asset_tags.asset_id = assets.id AND lower(tags.name) = lower(?)
+                )",
+            );
+            values.push(Box::new(tag.to_owned()));
+        }
+        if let Some(cursor) = &query.cursor {
+            sql.push_str(&format!(
+                " AND (({sort_column} < ?) OR ({sort_column} = ? AND id < ?))"
+            ));
+            values.push(Box::new(cursor.sort_timestamp.to_rfc3339()));
+            values.push(Box::new(cursor.sort_timestamp.to_rfc3339()));
+            values.push(Box::new(cursor.id.clone()));
+        }
+        sql.push_str(&format!(
+            " ORDER BY {sort_column} DESC, id DESC LIMIT {}",
+            limit + 1
+        ));
+
+        let mut statement = connection.prepare(&sql)?;
+        let rows = statement.query_map(
+            params_from_iter(values.iter().map(|value| value.as_ref())),
+            stored_asset_from_row,
+        )?;
+        let mut assets = rows
+            .map(|row| {
+                row.map_err(AssetRepositoryError::from)
+                    .and_then(|stored| asset_with_tags(&connection, stored))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let has_more = assets.len() > limit as usize;
+        if has_more {
+            assets.pop();
+        }
+        let next_cursor = has_more.then(|| {
+            let asset = assets.last().expect("a page with more rows has an item");
+            AssetCursor {
+                sort_timestamp: if query.deleted {
+                    asset
+                        .deleted_at
+                        .expect("deleted query rows have deleted_at")
+                } else {
+                    asset.created_at
+                },
+                id: asset.id.clone(),
+            }
+        });
+        Ok(AssetPage {
+            items: assets,
+            next_cursor,
+        })
+    }
+
     pub fn set_tags(&self, asset_id: &str, tags: &[String]) -> Result<(), AssetRepositoryError> {
         let mut connection = self
             .connection
@@ -202,6 +314,13 @@ fn load_tags(connection: &Connection, asset_id: &str) -> Result<Vec<String>, Ass
         .collect::<Result<Vec<String>, _>>()
         .map_err(AssetRepositoryError::from)?;
     Ok(tags)
+}
+
+fn escape_like(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
 }
 
 pub(crate) fn migrate_schema(connection: &Connection) -> Result<(), AssetRepositoryError> {
