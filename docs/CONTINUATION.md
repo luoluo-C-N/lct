@@ -1,14 +1,16 @@
 # Magic Image Library - Development Handoff
 
-Updated: 2026-07-31
+Updated: 2026-08-04
 
-Status: **The local MVP, floating companion skin library, transparent companion, and frozen desktop region capture are implemented. Automated verification is green; the remaining Windows checks are listed explicitly below.**
+Status: **The local MVP, floating companion skin library, transparent companion, and frozen desktop region capture are implemented. Windows local library 1.0 Task 1 is complete; resume at Task 2. Automated verification is green at the checkpoint described below.**
 
 ## Repository State
 
 - Repository: `https://github.com/luoluo-C-N/lct.git`
 - Branch: `feat/magic-image-library`
-- Latest implementation commit: `7b8e241` (`fix: serialize region overlay actions`)
+- Latest completed implementation commit: `831ab81` (`feat: align asset contract and schema v4`)
+- Current local pause checkpoint: `f8f12b1` (`wip: pause asset query implementation`)
+- Windows local library 1.0 plan: Task 1 complete; Tasks 2-7 remain. Resume with Task 2, unified cursor queries and asset details backend.
 - Frozen region capture commits: `83d9966`, `c4b66fa`, `76b5982`, `29cad98`, `785c2fb`, `b2253ec`, `43bcefb`, `76e2275`, `b1540d1`, `2e7f60f`, `7b8e241`.
 - Skin edit race fix: `8a8d3fa` (`fix: preserve unsaved skin edits on refresh`)
 - Asset repository state fix: `6eca1cf` (`fix: register asset repository state`)
@@ -17,7 +19,8 @@ Status: **The local MVP, floating companion skin library, transparent companion,
 
 ## Completed Scope
 
-- SQLite schema v3 with in-place v1 -> v2 -> v3 migration, assets, tags, companion skins, settings, visibility, and placement.
+- SQLite schema v4 with in-place v1 -> v2 -> v3 -> v4 migration, assets, tags, companion skins, settings, visibility, placement, asset display names, and query indexes.
+- Full Rust and TypeScript asset contracts now include display name, tags, deletion, capture, annotation, and cloud fields; imports preserve source filenames and captures generate non-empty `.png` display names.
 - File import preserves source creation time with defensive fallbacks and emits complete `asset-created` payloads after persistence.
 - Fullscreen, primary-display region overlay, and Win32 foreground-window capture branches persist `capture_mode` and emit `asset-created`.
 - Shared `MonthPicker`, cross-year navigation, MagicBook and ClassicGallery month-aware event refresh, and delayed unlisten cleanup.
@@ -43,6 +46,24 @@ Status: **The local MVP, floating companion skin library, transparent companion,
 - `create_asset` remains debug-only.
 
 ## Final Automated Verification
+
+Executed on Windows on 2026-08-04 at the pause checkpoint:
+
+```powershell
+cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+# exit 0
+
+cargo test --manifest-path src-tauri/Cargo.toml
+# 86 passed, 0 failed
+
+npm test
+# 13 files, 71 tests passed
+
+npm run build
+# TypeScript and Vite build succeeded
+```
+
+Task 2 repository query coverage currently passes 7 focused tests. Task 2 remains incomplete: IPC commands, asset details, asset protocol scope, and TypeScript query wrappers are not implemented yet.
 
 Executed on Windows on 2026-07-31:
 
@@ -113,6 +134,8 @@ npm run tauri -- dev
 
 Read this file first, then:
 
+- `docs/superpowers/specs/2026-08-04-windows-local-library-v1-design.md`
+- `docs/superpowers/plans/2026-08-04-windows-local-library-v1.md`
 - `docs/superpowers/specs/2026-07-31-transparent-companion-desktop-region-capture-design.md`
 - `docs/superpowers/plans/2026-07-31-transparent-companion-desktop-region-capture.md`
 - `docs/superpowers/specs/2026-07-30-floating-companion-skin-library-design.md`
